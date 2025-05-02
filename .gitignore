@@ -7,6 +7,7 @@
 *.dll
 *.so
 *.dylib
+**/.idea/
 
 # Test binary, built with `go test -c`
 *.test
@@ -16,6 +17,9 @@
 
 # Dependency directories (remove the comment below to include it)
 # vendor/
+postgress/data/**
+problems/**
+
 
 # Go workspace file
 go.work
@@ -23,3 +27,4 @@ go.work.sum
 
 # env file
 .env
+.vscode
