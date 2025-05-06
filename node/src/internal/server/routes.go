@@ -81,5 +81,29 @@ func (s *Server) handleGet(w http.ResponseWriter, r *http.Request) {
 // @route DELETE /kv/{key}
 // @access public
 func (s *Server) handleDelete(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodDelete {
+		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	key := strings.TrimPrefix(r.URL.Path, "/kv/")
+	if key == "" {
+		http.Error(w, "Missing key in URL path", http.StatusBadRequest)
+		return
+	}
+
+	log.Printf("Handling DELETE request: Key=%s", key)
+
+	err := s.store.Delete(key)
 	
+	var resp shared.Response
+	if err != nil {
+		//  deleting non-existent key is not handled for now maybe later
+		log.Printf("Error during delete (ignoring?): %v", err)
+        resp = shared.Response{Status: "OK"} 
+		sendJSONResponse(w, http.StatusOK, resp) 
+	} else {
+		resp = shared.Response{Status: "OK"}
+		sendJSONResponse(w, http.StatusOK, resp)
+	}
 }
