@@ -1,4 +1,4 @@
-package internal
+package storage
 
 import (
     "github.com/sajjad-MoBe/CloudKVStore/node/src/internal/shared"
