@@ -1,7 +1,7 @@
 package server
 
 import (
-	"net"
+	"net/http"
 	"github.com/sajjad-MoBe/CloudKVStore/node/src/internal/storage"
 
 	"log"
@@ -11,7 +11,6 @@ import (
 
 type Server struct {
 	store    *storage.SinglePartitionStore
-	listener net.Listener
 	address  string
 }
 
@@ -23,46 +22,32 @@ func NewServer(store *storage.SinglePartitionStore, address string) *Server {
 }
 
 
+
 func (s *Server) Start() error {
-	var err error
-	s.listener, err = net.Listen("tcp", s.address)
-	if err != nil {
-		return fmt.Errorf("failed to listen on %s: %w", s.address, err)
-	}
-	log.Printf("Node server listening on %s", s.address)
+	// Create a ServeMux (router)
+	mux := http.NewServeMux()
 
-	for {
-		conn, err := s.listener.Accept()
-		if err != nil {
-			log.Printf("Failed to accept connection: %v", err)
-			continue 
+	// We'll route based on path prefix /kv/ and handle methods inside
+	// TODO: Implement  handle methods inside
+	mux.HandleFunc("/kv/", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			s.handleGet(w, r)
+		case http.MethodPut:
+			s.handleSet(w, r)
+		case http.MethodDelete:
+			s.handleDelete(w, r)
+		default:
+			http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
 		}
-		log.Printf("Accepted connection from %s", conn.RemoteAddr())
-		go s.handleConnection(conn)
+	})
+
+	log.Printf("Node HTTP server starting on %s", s.address)
+
+	// Start the HTTP server
+	err := http.ListenAndServe(s.address, mux)
+	if err != nil && err != http.ErrServerClosed {
+		return fmt.Errorf("failed to start HTTP server: %w", err)
 	}
-	// return nil
-}
-
-
-func (s *Server) Stop() {
-	if s.listener != nil {
-		s.listener.Close()
-	}
-	log.Println("Server stopped.")
-}
-
-func (s *Server) handleConnection(conn net.Conn) {
-   defer conn.Close()
-   log.Printf("Handling connection from %s", conn.RemoteAddr())
-   // TODO: Implement read loop, decode, process, encode, send response ... later 
-   // for now, we just read a message and print it
-   buffer := make([]byte, 1024)
-   n, err := conn.Read(buffer)
-   if err != nil {
-        log.Printf("Error reading from connection: %v", err)
-        return
-   }
-    log.Printf("Received %d bytes: %s", n, string(buffer[:n]))
-    // dummy response for now
-    _, _ = conn.Write([]byte("Message received by node (dummy response)\n"))
+	return nil
 }
