@@ -3,6 +3,7 @@ package internal
 import (
     "github.com/sajjad-MoBe/CloudKVStore/node/src/internal/shared"
     "sync"
+	"errors"
 )
 
 
@@ -40,6 +41,7 @@ func (s *SinglePartitionStore) Set(key, value string) error{
 	}
 
 	s.wal = append(s.wal, entry)
+	// fmt.Printf("WAL: %+v\n", s.wal)
 
 	s.data[key] = value
 
@@ -66,8 +68,13 @@ func (s *SinglePartitionStore) Delete(key string) error{
 		Key:       key,
 		Value:     "",
 	}
+	_, found := s.data[key]
+    if !found {
+     return errors.New("key not found")
+    }
 
 	s.wal = append(s.wal, entry)
+	// fmt.Printf("WAL: %+v\n", s.wal)
 	delete(s.data, key)
 
 	return nil // no error
