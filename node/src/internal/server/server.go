@@ -1,17 +1,21 @@
 package server
 
 import (
-	"net/http"
+	"context"
 	"github.com/sajjad-MoBe/CloudKVStore/node/src/internal/storage"
+	"net/http"
 
-	"log"
 	"fmt"
-
+	"log"
 )
 
 type Server struct {
-	store    *storage.SinglePartitionStore
-	address  string
+	store   *storage.SinglePartitionStore
+	address string
+}
+
+func (s *Server) Shutdown(ctx context.Context) error {
+	return nil
 }
 
 func NewServer(store *storage.SinglePartitionStore, address string) *Server {
@@ -20,8 +24,6 @@ func NewServer(store *storage.SinglePartitionStore, address string) *Server {
 		address: address,
 	}
 }
-
-
 
 func (s *Server) Start() error {
 	// Create a ServeMux (router)
