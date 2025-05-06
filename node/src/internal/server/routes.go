@@ -39,7 +39,6 @@ func (s *Server) handleSet(w http.ResponseWriter, r *http.Request) {
 	err = s.store.Set(key, reqBody.Value) // Call set on servers' store 
 
 	var resp shared.Response
-
 	if err != nil {
 		resp = shared.Response{Status: "ERROR", Error: err.Error()}
 		sendJSONResponse(w, http.StatusInternalServerError, resp) // Send error response
@@ -53,7 +52,29 @@ func (s *Server) handleSet(w http.ResponseWriter, r *http.Request) {
 // @route GET /kv/{key}
 // @access public
 func (s *Server) handleGet(w http.ResponseWriter, r *http.Request) {
-	
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	key := strings.TrimPrefix(r.URL.Path, "/kv/")
+	if key == "" {
+		http.Error(w, "Missing key in URL path", http.StatusBadRequest)
+		return
+	}
+
+	log.Printf("Handling GET request: Key=%s", key)
+
+	value, found := s.store.Get(key) // Call get for server's store
+
+	var resp shared.Response
+	if !found {
+		resp = shared.Response{Status: "NOT_FOUND"}
+		sendJSONResponse(w, http.StatusNotFound, resp)
+	} else {
+		resp = shared.Response{Status: "OK", Value: value}
+		sendJSONResponse(w, http.StatusOK, resp)
+	}
 }
 
 // @desc Delete a key-value pair by key
