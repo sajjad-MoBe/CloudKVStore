@@ -30,7 +30,6 @@ func (s *Server) Start() error {
 	mux := http.NewServeMux()
 
 	// We'll route based on path prefix /kv/ and handle methods inside
-	// TODO: Implement  handle methods inside
 	mux.HandleFunc("/kv/", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:
@@ -43,6 +42,8 @@ func (s *Server) Start() error {
 			http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
 		}
 	})
+
+	mux.HandleFunc("/wal", s.handleWAL)
 
 	log.Printf("Node HTTP server starting on %s", s.address)
 

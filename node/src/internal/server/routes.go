@@ -107,3 +107,21 @@ func (s *Server) handleDelete(w http.ResponseWriter, r *http.Request) {
 		sendJSONResponse(w, http.StatusOK, resp)
 	}
 }
+
+
+func (s *Server) handleWAL(w http.ResponseWriter, r *http.Request) {
+    if r.Method != http.MethodGet {
+        http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
+        return
+    }
+
+    log.Printf("Handling WAL request")
+    
+    entries := s.store.GetWAL()
+    
+    w.Header().Set("Content-Type", "application/json")
+    json.NewEncoder(w).Encode(map[string]interface{}{
+        "status": "OK",
+        "wal": entries,
+    })
+}

@@ -4,6 +4,8 @@ import (
     "github.com/sajjad-MoBe/CloudKVStore/node/src/internal/shared"
     "sync"
 	"errors"
+
+	"time"
 )
 
 
@@ -38,6 +40,8 @@ func (s *SinglePartitionStore) Set(key, value string) error{
 		Operation: "SET",
 		Key:       key,
 		Value:     value,
+		Timestamp: time.Now(),
+
 	}
 
 	s.wal = append(s.wal, entry)
@@ -67,6 +71,7 @@ func (s *SinglePartitionStore) Delete(key string) error{
 		Operation: "DELETE",
 		Key:       key,
 		Value:     "",
+		Timestamp: time.Now(),
 	}
 	_, found := s.data[key]
     if !found {
@@ -78,4 +83,14 @@ func (s *SinglePartitionStore) Delete(key string) error{
 	delete(s.data, key)
 
 	return nil // no error
+}
+
+func (s *SinglePartitionStore) GetWAL() []shared.OperationLogEntry {
+    s.mutex.RLock()
+    defer s.mutex.RUnlock()
+    
+    // Return a copy to prevent external modifications
+    result := make([]shared.OperationLogEntry, len(s.wal))
+    copy(result, s.wal)
+    return result
 }

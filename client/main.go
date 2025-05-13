@@ -65,6 +65,11 @@ func main() {
             log.Fatal(err)
         }
 
+    case "viewwal":
+        if err := viewWAL(client, *serverAddr); err != nil {
+            log.Fatal(err)
+        }
+
     default:
         fmt.Printf("Unknown command: %s\n", command)
         printUsage()
@@ -72,11 +77,21 @@ func main() {
     }
 }
 
+func viewWAL(client *http.Client, serverAddr string) error {
+    req, err := http.NewRequest(http.MethodGet, fmt.Sprintf("%s/wal", serverAddr), nil)
+    if err != nil {
+        return fmt.Errorf("error creating request: %v", err)
+    }
+
+    return executeRequest(client, req)
+}
+
 func printUsage() {
     fmt.Println("Usage:")
     fmt.Println("  client --server http://localhost:8080 set <key> <value>")
     fmt.Println("  client --server http://localhost:8080 get <key>")
     fmt.Println("  client --server http://localhost:8080 delete <key>")
+    fmt.Println("  client --server http://localhost:8080 viewwal")
 }
 
 func setKey(client *http.Client, serverAddr, key, value string) error {
