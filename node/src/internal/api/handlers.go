@@ -2,22 +2,24 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strings"
 	"sync"
 	"time"
 
-	"cloudkvstore/node/src/internal/errors"
-	"cloudkvstore/node/src/internal/storage"
+	kvErr "github.com/sajjad-MoBe/CloudKVStore/node/src/internal/errors"
+	"github.com/sajjad-MoBe/CloudKVStore/node/src/internal/storage"
 
 	"github.com/gorilla/mux"
 )
 
 // Handler handles HTTP requests for the key-value store
 type Handler struct {
-	store       *storage.MemTable
-	metrics     *APIMetrics
-	authManager *AuthManager
+	store         *storage.MemTable
+	metrics       *APIMetrics
+	authManager   *AuthManager
+	healthManager *HealthManager
 }
 
 // APIMetrics tracks API metrics
@@ -58,7 +60,10 @@ func (h *Handler) GetValue(w http.ResponseWriter, r *http.Request) {
 	// Extract key from URL
 	key := strings.TrimPrefix(r.URL.Path, "/api/v1/keys/")
 	if key == "" {
-		h.handleError(w, errors.New(errors.INVALID_INPUT, "key is required"), http.StatusBadRequest)
+		h.handleError(w,
+			kvErr.New(kvErr.ErrorTypeInvalidInput, "key is required", nil),
+			http.StatusBadRequest,
+		)
 		return
 	}
 
@@ -68,7 +73,8 @@ func (h *Handler) GetValue(w http.ResponseWriter, r *http.Request) {
 		h.metrics.mu.Lock()
 		h.metrics.ErrorCount++
 		h.metrics.mu.Unlock()
-		if err == storage.ErrKeyNotFound {
+		var notFound *storage.ErrKeyNotFound
+		if errors.As(err, &notFound) {
 			h.handleError(w, err, http.StatusNotFound)
 			return
 		}
@@ -97,7 +103,9 @@ func (h *Handler) SetValue(w http.ResponseWriter, r *http.Request) {
 	// Extract key from URL
 	key := strings.TrimPrefix(r.URL.Path, "/api/v1/keys/")
 	if key == "" {
-		h.handleError(w, errors.New(errors.INVALID_INPUT, "key is required"), http.StatusBadRequest)
+		h.handleError(w,
+			kvErr.New(kvErr.ErrorTypeInvalidInput, "key is required", nil),
+			http.StatusBadRequest)
 		return
 	}
 
@@ -106,7 +114,10 @@ func (h *Handler) SetValue(w http.ResponseWriter, r *http.Request) {
 		Value string `json:"value"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
-		h.handleError(w, errors.New(errors.INVALID_INPUT, "invalid request body"), http.StatusBadRequest)
+		h.handleError(w,
+			kvErr.New(kvErr.ErrorTypeInvalidInput, "invalid request body", err),
+			http.StatusBadRequest,
+		)
 		return
 	}
 
@@ -139,7 +150,10 @@ func (h *Handler) DeleteValue(w http.ResponseWriter, r *http.Request) {
 	// Extract key from URL
 	key := strings.TrimPrefix(r.URL.Path, "/api/v1/keys/")
 	if key == "" {
-		h.handleError(w, errors.New(errors.INVALID_INPUT, "key is required"), http.StatusBadRequest)
+		h.handleError(w,
+			kvErr.New(kvErr.ErrorTypeInvalidInput, "key is required", nil),
+			http.StatusBadRequest,
+		)
 		return
 	}
 
@@ -148,7 +162,8 @@ func (h *Handler) DeleteValue(w http.ResponseWriter, r *http.Request) {
 		h.metrics.mu.Lock()
 		h.metrics.ErrorCount++
 		h.metrics.mu.Unlock()
-		if err == storage.ErrKeyNotFound {
+		var notFound *storage.ErrKeyNotFound
+		if errors.As(err, &notFound) {
 			h.handleError(w, err, http.StatusNotFound)
 			return
 		}
@@ -231,7 +246,10 @@ func (h *Handler) CreateUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
-		h.handleError(w, errors.New("invalid request body"), http.StatusBadRequest)
+		h.handleError(w,
+			kvErr.New(kvErr.ErrorTypeInvalidInput, "invalid request body", err),
+			http.StatusBadRequest,
+		)
 		return
 	}
 
@@ -259,7 +277,10 @@ func (h *Handler) CreateUser(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) DeleteUser(w http.ResponseWriter, r *http.Request) {
 	id := mux.Vars(r)["id"]
 	if id == "" {
-		h.handleError(w, errors.New("user ID is required"), http.StatusBadRequest)
+		h.handleError(w,
+			kvErr.New(kvErr.ErrorTypeInvalidInput, "user ID is required", nil),
+			http.StatusBadRequest,
+		)
 		return
 	}
 
@@ -273,4 +294,14 @@ func (h *Handler) DeleteUser(w http.ResponseWriter, r *http.Request) {
 		"success": true,
 	}
 	h.writeJSON(w, response, http.StatusOK)
+}
+
+func (h *Handler) HealthCheckHandler(w http.ResponseWriter, r *http.Request) {
+	h.healthManager.HealthCheckHandler(w, r)
+}
+
+// In handler.go:
+func (h *Handler) MetricsHandler(w http.ResponseWriter, r *http.Request) {
+	m := h.GetMetrics()
+	h.writeJSON(w, m, http.StatusOK)
 }

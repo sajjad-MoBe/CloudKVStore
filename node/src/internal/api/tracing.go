@@ -16,17 +16,6 @@ import (
 	"go.opentelemetry.io/otel/trace"
 )
 
-// responseWriter wraps http.ResponseWriter to capture status code
-type responseWriter struct {
-	http.ResponseWriter
-	statusCode int
-}
-
-func (rw *responseWriter) WriteHeader(code int) {
-	rw.statusCode = code
-	rw.ResponseWriter.WriteHeader(code)
-}
-
 // Tracer manages distributed tracing
 type Tracer struct {
 	tracer trace.Tracer
@@ -126,7 +115,7 @@ func (t *Tracer) TraceStorageOperation(ctx context.Context, operation string, fn
 
 	span.SetAttributes(
 		attribute.String("operation", operation),
-		attribute.Duration("duration", duration),
+		attribute.String("duration", duration.String()),
 	)
 
 	if err != nil {
@@ -148,7 +137,7 @@ func (t *Tracer) TraceAuthOperation(ctx context.Context, operation string, fn fu
 
 	span.SetAttributes(
 		attribute.String("operation", operation),
-		attribute.Duration("duration", duration),
+		attribute.String("duration", duration.String()),
 	)
 
 	if err != nil {

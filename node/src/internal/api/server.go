@@ -2,9 +2,10 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 
-	"cloudkvstore/node/src/internal/storage"
+	"github.com/sajjad-MoBe/CloudKVStore/node/src/internal/storage"
 
 	"github.com/gorilla/mux"
 )
@@ -48,7 +49,8 @@ func (s *Server) handleGet(w http.ResponseWriter, r *http.Request) {
 
 	value, err := s.store.Get(key)
 	if err != nil {
-		if err == storage.ErrKeyNotFound {
+		var errKeyNotFound *storage.ErrKeyNotFound
+		if errors.As(err, &errKeyNotFound) {
 			http.Error(w, "Key not found", http.StatusNotFound)
 			return
 		}
@@ -57,10 +59,13 @@ func (s *Server) handleGet(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{
+	err = json.NewEncoder(w).Encode(map[string]string{
 		"key":   key,
 		"value": string(value),
 	})
+	if err != nil {
+		return
+	}
 }
 
 // handlePut handles PUT /kv/{key} requests
@@ -96,7 +101,8 @@ func (s *Server) handleDelete(w http.ResponseWriter, r *http.Request) {
 	key := vars["key"]
 
 	if err := s.store.Delete(key); err != nil {
-		if err == storage.ErrKeyNotFound {
+		var errKeyNotFound *storage.ErrKeyNotFound
+		if errors.As(err, &errKeyNotFound) {
 			http.Error(w, "Key not found", http.StatusNotFound)
 			return
 		}
@@ -110,7 +116,10 @@ func (s *Server) handleDelete(w http.ResponseWriter, r *http.Request) {
 // handleHealth handles GET /health requests
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{
+	err := json.NewEncoder(w).Encode(map[string]string{
 		"status": "healthy",
 	})
+	if err != nil {
+		return
+	}
 }

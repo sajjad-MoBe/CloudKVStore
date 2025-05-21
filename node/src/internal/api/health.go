@@ -6,6 +6,8 @@ import (
 	"net/http"
 	"sync"
 	"time"
+
+	"github.com/sajjad-MoBe/CloudKVStore/node/src/internal/storage"
 )
 
 // HealthStatus represents the health status of a component
@@ -67,11 +69,11 @@ func (hm *HealthManager) GetStatus() map[string]HealthStatus {
 
 // StorageHealthChecker checks storage health
 type StorageHealthChecker struct {
-	store Storage
+	store storage.StorageEngine
 }
 
 // NewStorageHealthChecker creates a new storage health checker
-func NewStorageHealthChecker(store Storage) *StorageHealthChecker {
+func NewStorageHealthChecker(store storage.StorageEngine) *StorageHealthChecker {
 	return &StorageHealthChecker{store: store}
 }
 
@@ -150,5 +152,8 @@ func (hm *HealthManager) HealthCheckHandler(w http.ResponseWriter, r *http.Reque
 		w.WriteHeader(http.StatusOK)
 	}
 
-	json.NewEncoder(w).Encode(response)
+	err := json.NewEncoder(w).Encode(response)
+	if err != nil {
+		return
+	}
 }

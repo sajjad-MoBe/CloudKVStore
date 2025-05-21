@@ -7,7 +7,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"cloudkvstore/node/src/internal/storage"
+	"github.com/sajjad-MoBe/CloudKVStore/node/src/internal/storage"
 )
 
 func setupTestServer(t *testing.T) (*Server, func()) {

@@ -3,8 +3,9 @@ package api
 import (
 	"encoding/json"
 	"net/http"
+	"time"
 
-	"cloudkvstore/node/src/internal/errors"
+	"github.com/sajjad-MoBe/CloudKVStore/node/src/internal/errors"
 )
 
 // ErrorResponse represents an error response
@@ -15,12 +16,12 @@ type ErrorResponse struct {
 	} `json:"error"`
 }
 
-// ErrorHandler is a middleware that handles errors
-func ErrorHandler(next http.Handler) http.Handler {
+// RecoveryMiddleware is a middleware that recovers panics and writes JSON errors
+func RecoveryMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		defer func() {
-			if r := recover(); r != nil {
-				err := errors.RecoverError(r)
+			if rec := recover(); rec != nil {
+				err := errors.RecoverError(rec)
 				handleError(w, err)
 			}
 		}()
@@ -91,4 +92,15 @@ func logRequest(r *http.Request, statusCode int) {
 	// TODO: Implement proper logging
 	// For now, just print to stdout
 	println(r.Method, r.URL.Path, statusCode)
+}
+
+// MetricsMiddleware measures request durations (hook into your metrics backend)
+func MetricsMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		start := time.Now()
+		next.ServeHTTP(w, r)
+		duration := time.Since(start)
+		// TODO: push `duration` to your metrics system
+		_ = duration
+	})
 }
