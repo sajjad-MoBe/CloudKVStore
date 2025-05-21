@@ -2,7 +2,7 @@ syntax = "proto3";
 
 package kvstore;
 
-option go_package = "cloudkvstore/proto";
+option go_package = "node/proto";
 
 // KeyValueStore service provides methods for managing key-value pairs
 service KeyValueStore {
