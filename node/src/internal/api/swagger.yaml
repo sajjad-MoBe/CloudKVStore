@@ -1,0 +1,113 @@
+openapi: 3.0.0
+info:
+  title: CloudKVStore API
+  description: REST API for CloudKVStore key-value store
+  version: 1.0.0
+servers:
+  - url: http://localhost:8080/api/v1
+    description: Local development server
+paths:
+  /keys:
+    get:
+      summary: List all keys
+      description: Returns a list of all keys in the store
+      parameters:
+        - name: prefix
+          in: query
+          description: Filter keys by prefix
+          schema:
+            type: string
+      responses:
+        '200':
+          description: List of keys
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  keys:
+                    type: array
+                    items:
+                      type: string
+        '500':
+          description: Internal server error
+  /keys/{key}:
+    get:
+      summary: Get value by key
+      description: Returns the value for the specified key
+      parameters:
+        - name: key
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Value found
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  value:
+                    type: string
+        '404':
+          description: Key not found
+        '500':
+          description: Internal server error
+    put:
+      summary: Set value for key
+      description: Sets the value for the specified key
+      parameters:
+        - name: key
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                value:
+                  type: string
+                ttl:
+                  type: integer
+                  description: Time to live in seconds
+      responses:
+        '200':
+          description: Value set successfully
+        '400':
+          description: Invalid request
+        '500':
+          description: Internal server error
+    delete:
+      summary: Delete key
+      description: Deletes the specified key
+      parameters:
+        - name: key
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Key deleted successfully
+        '404':
+          description: Key not found
+        '500':
+          description: Internal server error
+components:
+  schemas:
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+  securitySchemes:
+    apiKey:
+      type: apiKey
+      in: header
+      name: X-API-Key 
