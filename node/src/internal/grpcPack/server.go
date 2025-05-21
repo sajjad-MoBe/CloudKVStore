@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	pb "github.com/sajjad-MoBe/CloudKVStore/node/proto"
+	pb "github.com/sajjad-MoBe/CloudKVStore/cloudkvstore/proto"
 	"github.com/sajjad-MoBe/CloudKVStore/node/src/internal/errors"
 	"github.com/sajjad-MoBe/CloudKVStore/node/src/internal/storage"
 
