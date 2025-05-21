@@ -1,4 +1,4 @@
-package grpc
+package grpcPack
 
 import (
 	"context"
@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	pb "cloudkvstore/proto"
+	pb "github.com/sajjad-MoBe/CloudKVStore/node/proto"
 	"github.com/sajjad-MoBe/CloudKVStore/node/src/internal/errors"
 	"github.com/sajjad-MoBe/CloudKVStore/node/src/internal/storage"
 

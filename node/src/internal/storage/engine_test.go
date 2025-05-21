@@ -3,7 +3,7 @@ package storage
 import (
 	"fmt"
 	"os"
-	"path/filepath"
+	_ "path/filepath"
 	"testing"
 )
 
@@ -183,4 +183,4 @@ func TestMemTableConcurrent(t *testing.T) {
 	for i := 0; i < 10; i++ {
 		<-done
 	}
-} 
+}

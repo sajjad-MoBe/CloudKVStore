@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"github.com/sajjad-MoBe/CloudKVStore/node/src/internal/wal"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -43,7 +44,7 @@ type StorageMetrics struct {
 type MemTable struct {
 	data        map[string]*entry
 	mutex       sync.RWMutex
-	walWriter   WALWriter
+	walWriter   wal.WALWriter
 	snapshotter Snapshotter
 	metrics     *StorageMetrics
 	maxSize     int64
@@ -58,7 +59,7 @@ type entry struct {
 }
 
 // NewMemTable creates a new MemTable instance
-func NewMemTable(walWriter WALWriter, snapshotter Snapshotter, maxSize int64) *MemTable {
+func NewMemTable(walWriter wal.WALWriter, snapshotter Snapshotter, maxSize int64) *MemTable {
 	m := &MemTable{
 		data:        make(map[string]*entry),
 		walWriter:   walWriter,
@@ -107,7 +108,6 @@ func (m *MemTable) SetWithTTL(key string, value []byte, ttl time.Duration) error
 	m.mutex.Lock()
 	defer m.mutex.Unlock()
 
-	// Check size limit
 	newSize := atomic.AddInt64(&m.metrics.TotalSize, int64(len(value)))
 	if m.maxSize > 0 && newSize > m.maxSize {
 		atomic.AddInt64(&m.metrics.TotalSize, -int64(len(value)))
@@ -115,25 +115,24 @@ func (m *MemTable) SetWithTTL(key string, value []byte, ttl time.Duration) error
 		return &ErrStorageFull{CurrentSize: newSize, MaxSize: m.maxSize}
 	}
 
-	// Create WAL entry
-	entry := &WALEntry{
+	walEntry := &wal.WALEntry{
 		Operation: "SET",
 		Key:       key,
 		Value:     value,
 		Timestamp: time.Now().UnixNano(),
 	}
 
-	// Write to WAL first
-	if err := m.walWriter.Append(entry); err != nil {
+	if err := m.walWriter.Append(walEntry); err != nil {
 		atomic.AddInt64(&m.metrics.ErrorCount, 1)
 		return err
 	}
 
-	// Update in-memory data
 	var expiresAt time.Time
 	if ttl > 0 {
 		expiresAt = time.Now().Add(ttl)
 	}
+
+	// explicitly reference internal type "entry"
 	m.data[key] = &entry{
 		value:     value,
 		expiresAt: expiresAt,
@@ -149,20 +148,17 @@ func (m *MemTable) Delete(key string) error {
 	m.mutex.Lock()
 	defer m.mutex.Unlock()
 
-	// Create WAL entry
-	entry := &WALEntry{
+	walEntry := &wal.WALEntry{
 		Operation: "DELETE",
 		Key:       key,
 		Timestamp: time.Now().UnixNano(),
 	}
 
-	// Write to WAL first
-	if err := m.walWriter.Append(entry); err != nil {
+	if err := m.walWriter.Append(walEntry); err != nil {
 		atomic.AddInt64(&m.metrics.ErrorCount, 1)
 		return err
 	}
 
-	// Update in-memory data
 	if oldEntry, exists := m.data[key]; exists {
 		atomic.AddInt64(&m.metrics.TotalSize, -int64(len(oldEntry.value)))
 	}
@@ -179,13 +175,13 @@ func (m *MemTable) Batch(operations []BatchOperation) error {
 
 	// Create WAL entries for all operations
 	for _, op := range operations {
-		entry := &WALEntry{
+		walEntry := &wal.WALEntry{
 			Operation: op.Type,
 			Key:       op.Key,
 			Value:     op.Value,
 			Timestamp: time.Now().UnixNano(),
 		}
-		if err := m.walWriter.Append(entry); err != nil {
+		if err := m.walWriter.Append(walEntry); err != nil {
 			atomic.AddInt64(&m.metrics.ErrorCount, 1)
 			return err
 		}
@@ -208,6 +204,8 @@ func (m *MemTable) Batch(operations []BatchOperation) error {
 			}
 			atomic.AddInt64(&m.metrics.TotalSize, int64(len(op.Value)))
 			atomic.AddInt64(&m.metrics.WriteCount, 1)
+			atomic.AddInt64(&m.metrics.TotalKeys, 1)
+
 		case "DELETE":
 			if oldEntry, exists := m.data[op.Key]; exists {
 				atomic.AddInt64(&m.metrics.TotalSize, -int64(len(oldEntry.value)))
@@ -310,9 +308,15 @@ func (m *MemTable) cleanupLoop() {
 	for {
 		select {
 		case <-ticker.C:
-			m.Cleanup()
+			err := m.Cleanup()
+			if err != nil {
+				return
+			}
 		case <-m.cleanupCh:
-			m.Cleanup()
+			err := m.Cleanup()
+			if err != nil {
+				return
+			}
 		case <-m.stopCh:
 			return
 		}

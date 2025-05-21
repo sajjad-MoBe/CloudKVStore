@@ -165,7 +165,12 @@ func (m *WALManager) replayFile(path string, handler func(*WALEntry) error) erro
 	if err != nil {
 		return fmt.Errorf("failed to open WAL file: %v", err)
 	}
-	defer file.Close()
+	defer func(file *os.File) {
+		err := file.Close()
+		if err != nil {
+
+		}
+	}(file)
 
 	decoder := gob.NewDecoder(file)
 	for {
@@ -205,7 +210,10 @@ func (m *WALManager) Close() error {
 	m.closeOnce.Do(func() {
 		close(m.stopCh)
 		if m.current != nil {
-			m.current.Close()
+			err := m.current.Close()
+			if err != nil {
+				return
+			}
 		}
 	})
 	return nil

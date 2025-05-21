@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"errors"
 	"github.com/sajjad-MoBe/CloudKVStore/node/src/internal/storage"
 	"net/http"
 
@@ -49,7 +50,7 @@ func (s *Server) Start() error {
 
 	// Start the HTTP server
 	err := http.ListenAndServe(s.address, mux)
-	if err != nil && err != http.ErrServerClosed {
+	if err != nil && !errors.Is(err, http.ErrServerClosed) {
 		return fmt.Errorf("failed to start HTTP server: %w", err)
 	}
 	return nil

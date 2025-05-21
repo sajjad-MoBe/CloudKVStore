@@ -37,11 +37,19 @@ func (s *FileSnapshotter) Create(data map[string][]byte) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("failed to create snapshot file: %w", err)
 	}
-	defer file.Close()
+	defer func(file *os.File) {
+		err := file.Close()
+		if err != nil {
+
+		}
+	}(file)
 
 	encoder := gob.NewEncoder(file)
 	if err := encoder.Encode(data); err != nil {
-		os.Remove(path) // Clean up on failure
+		err := os.Remove(path)
+		if err != nil {
+			return "", err
+		} // Clean up on failure
 		return "", fmt.Errorf("failed to encode snapshot data: %w", err)
 	}
 
@@ -54,7 +62,12 @@ func (s *FileSnapshotter) Restore(path string) (map[string][]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to open snapshot file: %w", err)
 	}
-	defer file.Close()
+	defer func(file *os.File) {
+		err := file.Close()
+		if err != nil {
+
+		}
+	}(file)
 
 	var data map[string][]byte
 	decoder := gob.NewDecoder(file)
@@ -63,4 +76,4 @@ func (s *FileSnapshotter) Restore(path string) (map[string][]byte, error) {
 	}
 
 	return data, nil
-} 
+}
