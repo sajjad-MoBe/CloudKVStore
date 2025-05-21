@@ -603,8 +603,7 @@ const file_kvstore_proto_rawDesc = "" +
 	"\x03Set\x12\x13.kvstore.SetRequest\x1a\x14.kvstore.SetResponse\"\x00\x12;\n" +
 	"\x06Delete\x12\x16.kvstore.DeleteRequest\x1a\x17.kvstore.DeleteResponse\"\x00\x12:\n" +
 	"\x05Watch\x12\x15.kvstore.WatchRequest\x1a\x16.kvstore.WatchResponse\"\x000\x01\x127\n" +
-	"\x04List\x12\x14.kvstore.ListRequest\x1a\x15.kvstore.ListResponse\"\x000\x01B\fZ\n" +
-	"node/protob\x06proto3"
+	"\x04List\x12\x14.kvstore.ListRequest\x1a\x15.kvstore.ListResponse\"\x000\x01B1Z/github.com/sajjad-MoBe/CloudKVStore/proto;protob\x06proto3"
 
 var (
 	file_kvstore_proto_rawDescOnce sync.Once

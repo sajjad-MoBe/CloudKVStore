@@ -2,11 +2,12 @@ package grpcPack
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"sync"
 	"time"
 
-	"github.com/sajjad-MoBe/CloudKVStore/node/src/internal/errors"
+	kvErr "github.com/sajjad-MoBe/CloudKVStore/node/src/internal/errors"
 	"github.com/sajjad-MoBe/CloudKVStore/node/src/internal/storage"
 	pb "github.com/sajjad-MoBe/CloudKVStore/proto"
 
@@ -53,10 +54,10 @@ func NewServer(store *storage.MemTable) *Server {
 // validateKey validates a key
 func validateKey(key string) error {
 	if key == "" {
-		return errors.New(errors.INVALID_INPUT, "key cannot be empty")
+		return kvErr.New(kvErr.ErrorTypeInvalidInput, "key cannot be empty", nil)
 	}
 	if len(key) > 1024 {
-		return errors.New(errors.INVALID_INPUT, "key too long")
+		return kvErr.New(kvErr.ErrorTypeInvalidInput, "key too long", nil)
 	}
 	return nil
 }
@@ -90,9 +91,11 @@ func (s *Server) Get(ctx context.Context, req *pb.GetRequest) (*pb.GetResponse, 
 		s.metrics.mu.Lock()
 		s.metrics.ErrorCount++
 		s.metrics.mu.Unlock()
-		if err == storage.ErrKeyNotFound {
+		var errKeyNotFound *storage.ErrKeyNotFound
+		if errors.As(err, &errKeyNotFound) {
 			return nil, status.Error(codes.NotFound, "key not found")
 		}
+
 		return nil, status.Error(codes.Internal, "internal error")
 	}
 
@@ -167,7 +170,8 @@ func (s *Server) Delete(ctx context.Context, req *pb.DeleteRequest) (*pb.DeleteR
 		s.metrics.mu.Lock()
 		s.metrics.ErrorCount++
 		s.metrics.mu.Unlock()
-		if err == storage.ErrKeyNotFound {
+		var errKeyNotFound *storage.ErrKeyNotFound
+		if errors.As(err, &errKeyNotFound) {
 			return nil, status.Error(codes.NotFound, "key not found")
 		}
 		return nil, status.Error(codes.Internal, "internal error")

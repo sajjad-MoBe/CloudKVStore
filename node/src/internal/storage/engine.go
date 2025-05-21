@@ -323,6 +323,22 @@ func (m *MemTable) cleanupLoop() {
 	}
 }
 
+// GetAll returns a snapshot of all non-expired key→value pairs.
+func (m *MemTable) GetAll() map[string][]byte {
+	m.mutex.RLock()
+	defer m.mutex.RUnlock()
+
+	result := make(map[string][]byte, len(m.data))
+	now := time.Now()
+	for k, e := range m.data {
+		// skip expired entries
+		if e.expiresAt.IsZero() || now.Before(e.expiresAt) {
+			result[k] = e.value
+		}
+	}
+	return result
+}
+
 // ErrKeyNotFound is returned when a key is not found in the store
 type ErrKeyNotFound struct {
 	Key string
