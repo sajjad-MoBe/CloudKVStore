@@ -1,4 +1,4 @@
-package main
+package client
 
 import (
 	"bytes"
@@ -226,7 +226,7 @@ type BatchClient struct {
 	// Wait group for batch operations
 	wg sync.WaitGroup
 	// Results channel
-	resultsCh chan batchResult
+	resultsCh chan BatchResult
 }
 
 // batchOp represents a batch operation
@@ -237,10 +237,11 @@ type batchOp struct {
 }
 
 // batchResult represents the result of a batch operation
-type batchResult struct {
-	key   string
-	value []byte
-	err   error
+
+type BatchResult struct { // Changed from batchResult to BatchResult (exported)
+	Key   string // Exported
+	Value []byte // Exported
+	Err   error  // Exported
 }
 
 // NewBatchClient creates a new batch client
@@ -248,7 +249,7 @@ func NewBatchClient(client *Client, batchSize int) *BatchClient {
 	bc := &BatchClient{
 		client:    client,
 		batchCh:   make(chan batchOp, batchSize),
-		resultsCh: make(chan batchResult, batchSize),
+		resultsCh: make(chan BatchResult, batchSize),
 	}
 
 	// Start batch processor
@@ -286,15 +287,14 @@ func (bc *BatchClient) Delete(key string) {
 }
 
 // Wait waits for all batch operations to complete
-func (bc *BatchClient) Wait() []batchResult {
+func (bc *BatchClient) Wait() []BatchResult {
 	bc.wg.Wait()
 	close(bc.batchCh)
 
-	results := make([]batchResult, 0)
-	for result := range bc.resultsCh {
-		results = append(results, result)
+	var results []BatchResult
+	for res := range bc.resultsCh {
+		results = append(results, res)
 	}
-
 	return results
 }
 
@@ -304,18 +304,18 @@ func (bc *BatchClient) processBatch() {
 		go func(op batchOp) {
 			defer bc.wg.Done()
 
-			var result batchResult
-			result.key = op.key
+			var result BatchResult
+			result.Key = op.key
 
 			switch op.opType {
 			case "set":
-				result.err = bc.client.Set(op.key, op.value)
+				result.Err = bc.client.Set(op.key, op.value)
 			case "get":
 				value, err := bc.client.Get(op.key)
-				result.value = value
-				result.err = err
+				result.Value = value
+				result.Err = err
 			case "delete":
-				result.err = bc.client.Delete(op.key)
+				result.Err = bc.client.Delete(op.key)
 			}
 
 			bc.resultsCh <- result
@@ -346,8 +346,8 @@ func LoadTest(client *Client, numRequests int, batchSize int) error {
 
 	// Check for errors
 	for _, result := range results {
-		if result.err != nil {
-			return fmt.Errorf("operation failed for key %s: %v", result.key, result.err)
+		if result.Err != nil {
+			return fmt.Errorf("operation failed for key %s: %v", result.Key, result.Err)
 		}
 	}
 
