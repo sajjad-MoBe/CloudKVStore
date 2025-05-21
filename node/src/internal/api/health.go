@@ -28,14 +28,66 @@ type HealthManager struct {
 	mu       sync.RWMutex
 	checkers map[string]HealthChecker
 	status   map[string]HealthStatus
+	nodeID   string
+	// Add fields for leader tracking
+	leaderStatus map[int]string // partitionID -> leaderID
+	stopCh       chan struct{}
 }
 
 // NewHealthManager creates a new health manager
-func NewHealthManager() *HealthManager {
-	return &HealthManager{
-		checkers: make(map[string]HealthChecker),
-		status:   make(map[string]HealthStatus),
+func NewHealthManager(nodeID string) *HealthManager {
+	hm := &HealthManager{
+		checkers:     make(map[string]HealthChecker),
+		status:       make(map[string]HealthStatus),
+		nodeID:       nodeID,
+		leaderStatus: make(map[int]string),
+		stopCh:       make(chan struct{}),
 	}
+	// Start periodic health checks
+	go hm.startPeriodicChecks()
+	return hm
+}
+
+// startPeriodicChecks starts periodic health checks
+func (hm *HealthManager) startPeriodicChecks() {
+	ticker := time.NewTicker(5 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ticker.C:
+			ctx := context.Background()
+			hm.RunHealthChecks(ctx)
+		case <-hm.stopCh:
+			return
+		}
+	}
+}
+
+// Stop stops the health manager
+func (hm *HealthManager) Stop() {
+	close(hm.stopCh)
+}
+
+// UpdateLeaderStatus updates the leader status for a partition
+func (hm *HealthManager) UpdateLeaderStatus(partitionID int, leaderID string) {
+	hm.mu.Lock()
+	defer hm.mu.Unlock()
+	hm.leaderStatus[partitionID] = leaderID
+}
+
+// GetLeaderStatus returns the current leader for a partition
+func (hm *HealthManager) GetLeaderStatus(partitionID int) string {
+	hm.mu.RLock()
+	defer hm.mu.RUnlock()
+	return hm.leaderStatus[partitionID]
+}
+
+// IsLeader checks if this node is the leader for a partition
+func (hm *HealthManager) IsLeader(partitionID int) bool {
+	hm.mu.RLock()
+	defer hm.mu.RUnlock()
+	return hm.leaderStatus[partitionID] == hm.nodeID
 }
 
 // RegisterChecker registers a health checker
@@ -156,4 +208,9 @@ func (hm *HealthManager) HealthCheckHandler(w http.ResponseWriter, r *http.Reque
 	if err != nil {
 		return
 	}
+}
+
+// GetNodeID returns the ID of this node
+func (h *HealthManager) GetNodeID() string {
+	return h.nodeID
 }

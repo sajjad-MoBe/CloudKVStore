@@ -14,11 +14,13 @@ const (
 	// ErrorTypeInvalidInput indicates invalid input parameters
 	ErrorTypeInvalidInput ErrorType = "INVALID_INPUT"
 	// ErrorTypeInternal indicates an internal server error
-	ErrorTypeInternal ErrorType = "INTERNAL"
+	ErrorTypeInternal ErrorType = "INTERNAL_ERROR"
 	// ErrorTypeStorage indicates a storage-related error
 	ErrorTypeStorage ErrorType = "STORAGE"
 	// ErrorTypeTimeout indicates an operation timed out
 	ErrorTypeTimeout ErrorType = "TIMEOUT"
+	// ErrorTypeNotLeader indicates that the node is not the leader
+	ErrorTypeNotLeader ErrorType = "NOT_LEADER"
 )
 
 // KVError represents a custom error with additional context
@@ -92,6 +94,14 @@ func IsStorage(err error) bool {
 func IsTimeout(err error) bool {
 	if kvErr, ok := err.(*KVError); ok {
 		return kvErr.Type == ErrorTypeTimeout
+	}
+	return false
+}
+
+// IsNotLeader checks if the error is a not leader error
+func IsNotLeader(err error) bool {
+	if kvErr, ok := err.(*KVError); ok {
+		return kvErr.Type == ErrorTypeNotLeader
 	}
 	return false
 }

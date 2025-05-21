@@ -20,6 +20,8 @@ type Handler struct {
 	metrics       *APIMetrics
 	authManager   *AuthManager
 	healthManager *HealthManager
+	// Add partition manager
+	partitionManager *PartitionManager
 }
 
 // APIMetrics tracks API metrics
@@ -39,11 +41,12 @@ type APIMetrics struct {
 }
 
 // NewHandler creates a new API handler
-func NewHandler(store *storage.MemTable, authManager *AuthManager) *Handler {
+func NewHandler(store *storage.MemTable, authManager *AuthManager, partitionManager *PartitionManager) *Handler {
 	return &Handler{
-		store:       store,
-		metrics:     &APIMetrics{},
-		authManager: authManager,
+		store:            store,
+		metrics:          &APIMetrics{},
+		authManager:      authManager,
+		partitionManager: partitionManager,
 	}
 }
 
@@ -67,8 +70,16 @@ func (h *Handler) GetValue(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Get value
-	value, err := h.store.Get(key)
+	// Find partition for the key
+	partitionID := h.partitionManager.GetPartitionForKey(key)
+	partition, err := h.partitionManager.GetPartitionInfo(partitionID)
+	if err != nil {
+		h.handleError(w, err, http.StatusInternalServerError)
+		return
+	}
+
+	// Get value from partition
+	value, err := h.partitionManager.Read(partitionID, key)
 	if err != nil {
 		h.metrics.mu.Lock()
 		h.metrics.ErrorCount++
@@ -84,8 +95,10 @@ func (h *Handler) GetValue(w http.ResponseWriter, r *http.Request) {
 
 	// Return response
 	response := map[string]interface{}{
-		"key":   key,
-		"value": string(value),
+		"key":       key,
+		"value":     string(value),
+		"partition": partitionID,
+		"leader":    partition.Leader,
 	}
 	h.writeJSON(w, response, http.StatusOK)
 }
@@ -121,8 +134,24 @@ func (h *Handler) SetValue(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Set value
-	if err := h.store.Set(key, []byte(request.Value)); err != nil {
+	// Find partition for the key
+	partitionID := h.partitionManager.GetPartitionForKey(key)
+	partition, err := h.partitionManager.GetPartitionInfo(partitionID)
+	if err != nil {
+		h.handleError(w, err, http.StatusInternalServerError)
+		return
+	}
+
+	// Check if this node is the leader
+	if partition.Leader != h.healthManager.GetNodeID() {
+		h.handleError(w,
+			kvErr.New(kvErr.ErrorTypeNotLeader, "not the leader for this partition", nil),
+			http.StatusServiceUnavailable)
+		return
+	}
+
+	// Write to partition (includes WAL and replication)
+	if err := h.partitionManager.Write(partitionID, key, []byte(request.Value)); err != nil {
 		h.metrics.mu.Lock()
 		h.metrics.ErrorCount++
 		h.metrics.mu.Unlock()
@@ -132,7 +161,9 @@ func (h *Handler) SetValue(w http.ResponseWriter, r *http.Request) {
 
 	// Return success response
 	response := map[string]interface{}{
-		"success": true,
+		"success":   true,
+		"partition": partitionID,
+		"leader":    partition.Leader,
 	}
 	h.writeJSON(w, response, http.StatusOK)
 }
@@ -157,8 +188,24 @@ func (h *Handler) DeleteValue(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Delete value
-	if err := h.store.Delete(key); err != nil {
+	// Find partition for the key
+	partitionID := h.partitionManager.GetPartitionForKey(key)
+	partition, err := h.partitionManager.GetPartitionInfo(partitionID)
+	if err != nil {
+		h.handleError(w, err, http.StatusInternalServerError)
+		return
+	}
+
+	// Check if this node is the leader
+	if partition.Leader != h.healthManager.GetNodeID() {
+		h.handleError(w,
+			kvErr.New(kvErr.ErrorTypeNotLeader, "not the leader for this partition", nil),
+			http.StatusServiceUnavailable)
+		return
+	}
+
+	// Delete from partition (includes WAL and replication)
+	if err := h.partitionManager.Write(partitionID, key, nil); err != nil {
 		h.metrics.mu.Lock()
 		h.metrics.ErrorCount++
 		h.metrics.mu.Unlock()
@@ -173,7 +220,9 @@ func (h *Handler) DeleteValue(w http.ResponseWriter, r *http.Request) {
 
 	// Return success response
 	response := map[string]interface{}{
-		"success": true,
+		"success":   true,
+		"partition": partitionID,
+		"leader":    partition.Leader,
 	}
 	h.writeJSON(w, response, http.StatusOK)
 }
