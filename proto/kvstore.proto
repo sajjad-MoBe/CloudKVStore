@@ -1,0 +1,84 @@
+syntax = "proto3";
+
+package kvstore;
+
+option go_package = "node/proto";
+
+// KeyValueStore service provides methods for managing key-value pairs
+service KeyValueStore {
+  // Get retrieves the value for a given key
+  rpc Get(GetRequest) returns (GetResponse) {}
+  
+  // Set stores a value for a given key
+  rpc Set(SetRequest) returns (SetResponse) {}
+  
+  // Delete removes a key-value pair
+  rpc Delete(DeleteRequest) returns (DeleteResponse) {}
+  
+  // Watch streams updates for a given key
+  rpc Watch(WatchRequest) returns (stream WatchResponse) {}
+  
+  // List streams all key-value pairs
+  rpc List(ListRequest) returns (stream ListResponse) {}
+}
+
+// GetRequest represents a request to get a value
+message GetRequest {
+  string key = 1;
+}
+
+// GetResponse represents the response to a get request
+message GetResponse {
+  string key = 1;
+  bytes value = 2;
+}
+
+// SetRequest represents a request to set a value
+message SetRequest {
+  string key = 1;
+  bytes value = 2;
+}
+
+// SetResponse represents the response to a set request
+message SetResponse {
+  bool success = 1;
+}
+
+// DeleteRequest represents a request to delete a key-value pair
+message DeleteRequest {
+  string key = 1;
+}
+
+// DeleteResponse represents the response to a delete request
+message DeleteResponse {
+  bool success = 1;
+}
+
+// WatchRequest represents a request to watch a key for changes
+message WatchRequest {
+  string key = 1;
+}
+
+// WatchResponse represents a change notification for a watched key
+message WatchResponse {
+  string key = 1;
+  bytes value = 2;
+  enum Operation {
+    UNKNOWN = 0;
+    SET = 1;
+    DELETE = 2;
+  }
+  Operation operation = 3;
+}
+
+// ListRequest represents a request to list all key-value pairs
+message ListRequest {
+  // Optional prefix to filter keys
+  string prefix = 1;
+}
+
+// ListResponse represents a key-value pair in the list response
+message ListResponse {
+  string key = 1;
+  bytes value = 2;
+} 

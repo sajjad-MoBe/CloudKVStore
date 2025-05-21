@@ -6,9 +6,9 @@ import (
 	"sync"
 	"time"
 
-	pb "github.com/sajjad-MoBe/CloudKVStore/node/proto"
 	"github.com/sajjad-MoBe/CloudKVStore/node/src/internal/errors"
 	"github.com/sajjad-MoBe/CloudKVStore/node/src/internal/storage"
+	pb "github.com/sajjad-MoBe/CloudKVStore/proto"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
