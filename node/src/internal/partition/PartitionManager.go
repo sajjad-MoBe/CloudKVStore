@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/sajjad-MoBe/CloudKVStore/node/src/internal/shared"
 	"github.com/sajjad-MoBe/CloudKVStore/node/src/internal/wal"
 )
 
@@ -24,11 +25,11 @@ type PartitionManager struct {
 	// Configuration
 	config PartitionConfig
 	// Health manager for leader tracking
-	healthManager *HealthManager
+	healthManager *shared.HealthManager
 }
 
 // NewPartitionManager creates a new partition manager
-func NewPartitionManager(config PartitionConfig, healthManager *HealthManager) *PartitionManager {
+func NewPartitionManager(config PartitionConfig, healthManager *shared.HealthManager) *PartitionManager {
 	return &PartitionManager{
 		partitions:         make(map[int]*PartitionData),
 		walManagers:        make(map[int]*wal.WALManager),

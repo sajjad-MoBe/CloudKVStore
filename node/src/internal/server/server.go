@@ -2,7 +2,7 @@ package server
 
 import (
 	"context"
-	"github.com/sajjad-MoBe/CloudKVStore/node/src/internal/storage"
+	"github.com/sajjad-MoBe/CloudKVStore/node/src/internal/shared"
 	"net/http"
 
 	"fmt"
@@ -10,7 +10,7 @@ import (
 )
 
 type Server struct {
-	store   *storage.SinglePartitionStore
+	store   *shared.SinglePartitionStore
 	address string
 }
 
@@ -18,7 +18,7 @@ func (s *Server) Shutdown(ctx context.Context) error {
 	return nil
 }
 
-func NewServer(store *storage.SinglePartitionStore, address string) *Server {
+func NewServer(store *shared.SinglePartitionStore, address string) *Server {
 	return &Server{
 		store:   store,
 		address: address,

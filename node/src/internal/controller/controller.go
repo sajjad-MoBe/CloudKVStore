@@ -3,6 +3,7 @@ package controller
 import (
 	"github.com/gorilla/mux"
 	"github.com/sajjad-MoBe/CloudKVStore/node/src/internal/partition"
+	"github.com/sajjad-MoBe/CloudKVStore/node/src/internal/shared"
 	"net/http"
 	"sync"
 	"time"
@@ -17,14 +18,14 @@ type Controller struct {
 	}
 	// Add fields for partition and health management
 	partitionManager *partition.PartitionManager
-	healthManager    *HealthManager
+	healthManager    *shared.HealthManager
 	router           *mux.Router
 	stopCh           chan struct{}
 	interval         time.Duration
 }
 
 // NewController creates a new controller
-func NewController(partitionManager *partition.PartitionManager, healthManager *HealthManager) *Controller {
+func NewController(partitionManager *partition.PartitionManager, healthManager *shared.HealthManager) *Controller {
 	c := &Controller{
 		partitionManager: partitionManager,
 		healthManager:    healthManager,
