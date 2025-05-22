@@ -6,3 +6,7 @@ type Request struct {
     Key   string
     Value string // Empty for GET/DELETE
 }
+
+type SetRequestBody struct {
+    Value string `json:"value"` 
+}
