@@ -1,22 +1,24 @@
-package controller
+package shared
 
 import (
 	"encoding/json"
+	"github.com/gorilla/mux"
+	"github.com/sajjad-MoBe/CloudKVStore/node/src/cmd/controller"
 	"net/http"
 	"time"
 )
 
 // Node represents a node in the cluster
 type Node struct {
-	ID         string      `json:"id"`
-	Address    string      `json:"address"`
-	Status     string      `json:"status"` // "active", "failed", "joining"
-	LastSeen   time.Time   `json:"last_seen"`
-	Partitions []Partition `json:"partitions"`
+	ID         string                 `json:"id"`
+	Address    string                 `json:"address"`
+	Status     string                 `json:"status"` // "active", "failed", "joining"
+	LastSeen   time.Time              `json:"last_seen"`
+	Partitions []controller.Partition `json:"partitions"`
 }
 
 // handleGetNodeStatus handles GET /nodes/{id}/status requests
-func (c *Controller) handleGetNodeStatus(w http.ResponseWriter, r *http.Request) {
+func (c *controller.Controller) handleGetNodeStatus(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	nodeID := vars["id"]
 

@@ -3,6 +3,9 @@ package partition
 import (
 	"sync"
 	"time"
+
+	"github.com/sajjad-MoBe/CloudKVStore/node/src/internal/wal"
+	"github.com/sajjad-MoBe/CloudKVStore/shared"
 )
 
 // MemTable represents an LSM-like in-memory table

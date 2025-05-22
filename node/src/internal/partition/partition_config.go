@@ -1,6 +1,10 @@
 package partition
 
-import "time"
+import (
+	"github.com/sajjad-MoBe/CloudKVStore/node/src/internal/wal"
+	"github.com/sajjad-MoBe/CloudKVStore/shared"
+	"time"
+)
 
 // PartitionConfig holds configuration for partitions
 type PartitionConfig struct {

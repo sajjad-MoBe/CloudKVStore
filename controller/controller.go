@@ -1,7 +1,8 @@
 package controller
 
 import (
-	"fmt"
+	"github.com/gorilla/mux"
+	"github.com/sajjad-MoBe/CloudKVStore/node/src/internal/shared"
 	"net/http"
 	"sync"
 	"time"
@@ -11,8 +12,8 @@ import (
 type Controller struct {
 	state struct {
 		mu         sync.RWMutex
-		Nodes      map[string]*Node
-		Partitions map[int]*Partition
+		Nodes      map[string]*shared.Node
+		Partitions map[int]*shared.Partition
 	}
 	// Add fields for partition and health management
 	partitionManager *PartitionManager
@@ -31,8 +32,8 @@ func NewController(partitionManager *PartitionManager, healthManager *HealthMana
 		router:           mux.NewRouter(),
 		interval:         5 * time.Second,
 	}
-	c.state.Nodes = make(map[string]*Node)
-	c.state.Partitions = make(map[int]*Partition)
+	c.state.Nodes = make(map[string]*shared.Node)
+	c.state.Partitions = make(map[int]*shared.Partition)
 
 	// Start failover monitor
 	go c.startFailoverMonitor()

@@ -1,14 +1,13 @@
 package server
 
 import (
+	shared2 "github.com/sajjad-MoBe/CloudKVStore/shared"
 	"net/http"
 
 	"strings"
-	"github.com/sajjad-MoBe/CloudKVStore/node/src/internal/shared"
 
 	"encoding/json"
-	"log"	
-
+	"log"
 )
 
 // @desc Set a key-value pair
@@ -26,7 +25,7 @@ func (s *Server) handleSet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var reqBody shared.SetRequestBody
+	var reqBody shared2.SetRequestBody
 	err := json.NewDecoder(r.Body).Decode(&reqBody)
 	if err != nil {
 		http.Error(w, "Invalid request body: "+err.Error(), http.StatusBadRequest)
@@ -36,14 +35,14 @@ func (s *Server) handleSet(w http.ResponseWriter, r *http.Request) {
 
 	log.Printf("Handling SET request: Key=%s, Value=%s", key, reqBody.Value)
 
-	err = s.store.Set(key, reqBody.Value) // Call set on servers' store 
+	err = s.store.Set(key, reqBody.Value) // Call set on servers' store
 
-	var resp shared.Response
+	var resp shared2.Response
 	if err != nil {
-		resp = shared.Response{Status: "ERROR", Error: err.Error()}
+		resp = shared2.Response{Status: "ERROR", Error: err.Error()}
 		sendJSONResponse(w, http.StatusInternalServerError, resp) // Send error response
 	} else {
-		resp = shared.Response{Status: "OK"}
+		resp = shared2.Response{Status: "OK"}
 		sendJSONResponse(w, http.StatusOK, resp) // Send success response
 	}
 }
@@ -67,12 +66,12 @@ func (s *Server) handleGet(w http.ResponseWriter, r *http.Request) {
 
 	value, found := s.store.Get(key) // Call get for server's store
 
-	var resp shared.Response
+	var resp shared2.Response
 	if !found {
-		resp = shared.Response{Status: "NOT_FOUND"}
+		resp = shared2.Response{Status: "NOT_FOUND"}
 		sendJSONResponse(w, http.StatusNotFound, resp)
 	} else {
-		resp = shared.Response{Status: "OK", Value: value}
+		resp = shared2.Response{Status: "OK", Value: value}
 		sendJSONResponse(w, http.StatusOK, resp)
 	}
 }
@@ -95,33 +94,32 @@ func (s *Server) handleDelete(w http.ResponseWriter, r *http.Request) {
 	log.Printf("Handling DELETE request: Key=%s", key)
 
 	err := s.store.Delete(key)
-	
-	var resp shared.Response
+
+	var resp shared2.Response
 	if err != nil {
 		//  deleting non-existent key is not handled for now maybe later
 		log.Printf("Error during delete (ignoring?): %v", err)
-        resp = shared.Response{Status: "OK"} 
-		sendJSONResponse(w, http.StatusOK, resp) 
+		resp = shared2.Response{Status: "OK"}
+		sendJSONResponse(w, http.StatusOK, resp)
 	} else {
-		resp = shared.Response{Status: "OK"}
+		resp = shared2.Response{Status: "OK"}
 		sendJSONResponse(w, http.StatusOK, resp)
 	}
 }
 
-
 func (s *Server) handleWAL(w http.ResponseWriter, r *http.Request) {
-    if r.Method != http.MethodGet {
-        http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
-        return
-    }
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
+		return
+	}
 
-    log.Printf("Handling WAL request")
-    
-    entries := s.store.GetWAL()
-    
-    w.Header().Set("Content-Type", "application/json")
-    json.NewEncoder(w).Encode(map[string]interface{}{
-        "status": "OK",
-        "wal": entries,
-    })
+	log.Printf("Handling WAL request")
+
+	entries := s.store.GetWAL()
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"status": "OK",
+		"wal":    entries,
+	})
 }

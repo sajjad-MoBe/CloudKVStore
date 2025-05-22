@@ -3,6 +3,8 @@ package partition
 import (
 	"errors"
 	"fmt"
+	"github.com/sajjad-MoBe/CloudKVStore/node/src/internal/wal"
+	"github.com/sajjad-MoBe/CloudKVStore/shared"
 	"io"
 	"time"
 )

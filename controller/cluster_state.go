@@ -2,6 +2,8 @@ package controller
 
 import (
 	"encoding/json"
+	"github.com/gorilla/mux"
+	"github.com/sajjad-MoBe/CloudKVStore/node/src/internal/shared"
 	"net/http"
 	"sync"
 	"time"
@@ -9,8 +11,8 @@ import (
 
 // ClusterState represents the current state of the cluster
 type ClusterState struct {
-	Nodes      map[string]*Node
-	Partitions []Partition
+	Nodes      map[string]*shared.Node
+	Partitions []shared.Partition
 	mu         sync.RWMutex
 }
 
@@ -18,7 +20,7 @@ func (c *Controller) handleListNodes(w http.ResponseWriter, r *http.Request) {
 	c.state.mu.RLock()
 	defer c.state.mu.RUnlock()
 
-	nodes := make([]*Node, 0, len(c.state.Nodes))
+	nodes := make([]*shared.Node, 0, len(c.state.Nodes))
 	for _, node := range c.state.Nodes {
 		nodes = append(nodes, node)
 	}
@@ -28,7 +30,7 @@ func (c *Controller) handleListNodes(w http.ResponseWriter, r *http.Request) {
 }
 
 func (c *Controller) handleAddNode(w http.ResponseWriter, r *http.Request) {
-	var node Node
+	var node shared.Node
 	if err := json.NewDecoder(r.Body).Decode(&node); err != nil {
 		http.Error(w, "Invalid request body", http.StatusBadRequest)
 		return

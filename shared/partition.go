@@ -1,9 +1,11 @@
-package controller
+package shared
 
 import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/gorilla/mux"
+	"github.com/sajjad-MoBe/CloudKVStore/node/src/cmd/controller"
 	"net/http"
 	"strconv"
 )
@@ -16,7 +18,7 @@ type Partition struct {
 	Status   string   `json:"status"`   // "healthy", "rebalancing", "failed"
 }
 
-func (c *Controller) assignPartition(partition *Partition) error {
+func (c *controller.Controller) assignPartition(partition *Partition) error {
 	// Find available nodes
 	var availableNodes []string
 	for id, node := range c.state.Nodes {
@@ -37,7 +39,7 @@ func (c *Controller) assignPartition(partition *Partition) error {
 	return nil
 }
 
-func (c *Controller) handleChangeLeader(w http.ResponseWriter, r *http.Request) {
+func (c *controller.Controller) handleChangeLeader(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	partitionIDStr := vars["id"]
 	partitionID, err := strconv.Atoi(partitionIDStr)
@@ -67,7 +69,7 @@ func (c *Controller) handleChangeLeader(w http.ResponseWriter, r *http.Request) 
 	w.WriteHeader(http.StatusOK)
 }
 
-func (c *Controller) handleUpdateReplicas(w http.ResponseWriter, r *http.Request) {
+func (c *controller.Controller) handleUpdateReplicas(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	partitionIDStr := vars["id"]
 	partitionID, err := strconv.Atoi(partitionIDStr)
@@ -105,7 +107,7 @@ func (c *Controller) handleUpdateReplicas(w http.ResponseWriter, r *http.Request
 	w.WriteHeader(http.StatusOK)
 }
 
-func (c *Controller) handleRebalance(w http.ResponseWriter, r *http.Request) {
+func (c *controller.Controller) handleRebalance(w http.ResponseWriter, r *http.Request) {
 	c.state.mu.Lock()
 	defer c.state.mu.Unlock()
 
@@ -120,7 +122,7 @@ func (c *Controller) handleRebalance(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleFailover handles failover for a partition
-func (c *Controller) handleFailover(partitionID int) error {
+func (c *controller.Controller) handleFailover(partitionID int) error {
 	// Get partition info
 	partition, err := c.partitionManager.GetPartitionInfo(partitionID)
 	if err != nil {
@@ -165,7 +167,7 @@ func (c *Controller) handleFailover(partitionID int) error {
 	return nil
 }
 
-func (c *Controller) handleCreatePartition(w http.ResponseWriter, r *http.Request) {
+func (c *controller.Controller) handleCreatePartition(w http.ResponseWriter, r *http.Request) {
 	var partition Partition
 	if err := json.NewDecoder(r.Body).Decode(&partition); err != nil {
 		http.Error(w, "Invalid request body", http.StatusBadRequest)
@@ -197,7 +199,7 @@ func (c *Controller) handleCreatePartition(w http.ResponseWriter, r *http.Reques
 	w.WriteHeader(http.StatusCreated)
 }
 
-func (c *Controller) handleDeletePartition(w http.ResponseWriter, r *http.Request) {
+func (c *controller.Controller) handleDeletePartition(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	partitionIDStr := vars["id"]
 	partitionID, err := strconv.Atoi(partitionIDStr)
