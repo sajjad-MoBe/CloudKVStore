@@ -358,3 +358,59 @@ func GetLoadBalancerConfig(ctrl *controller.Controller) (map[string]interface{},
 
 	return result, nil
 }
+
+// CreatePartition creates a new partition in the controller
+func CreatePartition(ctrl *controller.Controller, partition controller.Partition) error {
+	url := fmt.Sprintf("http://localhost%s/partitions", ctrl.GetTestPort())
+	jsonData, err := json.Marshal(partition)
+	if err != nil {
+		return fmt.Errorf("error marshaling partition data: %v", err)
+	}
+
+	req, err := http.NewRequest(http.MethodPost, url, bytes.NewBuffer(jsonData))
+	if err != nil {
+		return fmt.Errorf("error creating request: %v", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		return fmt.Errorf("error executing request: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusCreated {
+		return fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+	}
+
+	return nil
+}
+
+// UpdatePartitionReplicas updates the replicas of a partition
+func UpdatePartitionReplicas(ctrl *controller.Controller, partitionID int, replicas []string) error {
+	url := fmt.Sprintf("http://localhost%s/partitions/%d/replicas", ctrl.GetTestPort(), partitionID)
+	jsonData, err := json.Marshal(map[string][]string{"replicas": replicas})
+	if err != nil {
+		return fmt.Errorf("error marshaling replicas data: %v", err)
+	}
+
+	req, err := http.NewRequest(http.MethodPut, url, bytes.NewBuffer(jsonData))
+	if err != nil {
+		return fmt.Errorf("error creating request: %v", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		return fmt.Errorf("error executing request: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+	}
+
+	return nil
+}

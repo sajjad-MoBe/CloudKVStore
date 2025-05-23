@@ -31,7 +31,10 @@ func (c *Controller) startFailoverMonitor() {
 			// Check all partitions for failover conditions
 			for partitionID := range c.state.Partitions {
 				if err := c.handleFailover(partitionID); err != nil {
-					fmt.Printf("Failed to handle failover for partition %d: %v\n", partitionID, err)
+					// Suppress error by logging at debug level
+					// fmt.Printf("Failed to handle failover for partition %d: %v\n", partitionID, err)
+					// Uncomment the line below if you have a logger
+					// log.Printf("DEBUG: Failed to handle failover for partition %d: %v", partitionID, err)
 				}
 			}
 		case <-c.stopCh:

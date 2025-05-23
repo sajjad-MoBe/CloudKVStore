@@ -12,7 +12,7 @@ import (
 // ClusterState represents the current state of the cluster
 type ClusterState struct {
 	Nodes      map[string]*Node
-	Partitions []Partition
+	Partitions map[int]*Partition
 	mu         sync.RWMutex
 }
 
@@ -76,6 +76,11 @@ func (c *Controller) handleListPartitions(w http.ResponseWriter, r *http.Request
 	c.state.mu.RLock()
 	defer c.state.mu.RUnlock()
 
+	partitions := make([]*Partition, 0, len(c.state.Partitions))
+	for _, partition := range c.state.Partitions {
+		partitions = append(partitions, partition)
+	}
+
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(c.state.Partitions)
+	json.NewEncoder(w).Encode(partitions)
 }
