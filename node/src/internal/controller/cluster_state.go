@@ -2,10 +2,11 @@ package controller
 
 import (
 	"encoding/json"
-	"github.com/gorilla/mux"
 	"net/http"
 	"sync"
 	"time"
+
+	"github.com/gorilla/mux"
 )
 
 // ClusterState represents the current state of the cluster
@@ -43,7 +44,7 @@ func (c *Controller) handleAddNode(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	node.Status = "joining"
+	node.Status = "active"
 	node.LastSeen = time.Now()
 	c.state.Nodes[node.ID] = &node
 

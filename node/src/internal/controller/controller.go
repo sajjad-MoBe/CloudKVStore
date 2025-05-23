@@ -1,12 +1,13 @@
 package controller
 
 import (
-	"github.com/gorilla/mux"
-	"github.com/sajjad-MoBe/CloudKVStore/node/src/internal/partition"
-	"github.com/sajjad-MoBe/CloudKVStore/node/src/internal/shared"
 	"net/http"
 	"sync"
 	"time"
+
+	"github.com/gorilla/mux"
+	"github.com/sajjad-MoBe/CloudKVStore/node/src/internal/partition"
+	"github.com/sajjad-MoBe/CloudKVStore/node/src/internal/shared"
 )
 
 // Controller manages the cluster state
@@ -22,6 +23,7 @@ type Controller struct {
 	router           *mux.Router
 	stopCh           chan struct{}
 	interval         time.Duration
+	testPort         string // Port used for testing
 }
 
 // NewController creates a new controller
@@ -53,3 +55,15 @@ func (c *Controller) Start(addr string) error {
 func (c *Controller) Stop() {
 	close(c.stopCh)
 }
+
+// SetTestPort sets the port for testing
+func (c *Controller) SetTestPort(port string) {
+	c.testPort = port
+}
+
+// GetTestPort gets the port for testing
+func (c *Controller) GetTestPort() string {
+	return c.testPort
+}
+
+// setupRoutes is defined in api.go

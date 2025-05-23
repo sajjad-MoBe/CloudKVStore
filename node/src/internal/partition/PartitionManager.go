@@ -26,6 +26,8 @@ type PartitionManager struct {
 	config PartitionConfig
 	// Health manager for leader tracking
 	healthManager *shared.HealthManager
+	// In-memory key-value store for testing
+	store map[string]string
 }
 
 // NewPartitionManager creates a new partition manager
@@ -37,6 +39,7 @@ func NewPartitionManager(config PartitionConfig, healthManager *shared.HealthMan
 		memTables:          make(map[int]*MemTable),
 		config:             config,
 		healthManager:      healthManager,
+		store:              make(map[string]string),
 	}
 }
 
@@ -433,4 +436,37 @@ func (pm *PartitionManager) GetPartitions() map[int]*PartitionData {
 		partitions[id] = partition
 	}
 	return partitions
+}
+
+// Get retrieves a value for a given key
+func (pm *PartitionManager) Get(key string) (string, error) {
+	pm.mu.RLock()
+	defer pm.mu.RUnlock()
+	value, ok := pm.store[key]
+	if !ok {
+		return "", fmt.Errorf("key not found")
+	}
+	return value, nil
+}
+
+// Set stores a value for a given key
+func (pm *PartitionManager) Set(key, value string) error {
+	if key == "" || value == "" {
+		return fmt.Errorf("key and value must not be empty")
+	}
+	pm.mu.Lock()
+	defer pm.mu.Unlock()
+	pm.store[key] = value
+	return nil
+}
+
+// Delete removes a key-value pair
+func (pm *PartitionManager) Delete(key string) error {
+	pm.mu.Lock()
+	defer pm.mu.Unlock()
+	if _, ok := pm.store[key]; !ok {
+		return fmt.Errorf("key not found")
+	}
+	delete(pm.store, key)
+	return nil
 }
