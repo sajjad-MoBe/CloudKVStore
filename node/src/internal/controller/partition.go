@@ -8,6 +8,7 @@ import (
 	"strconv"
 
 	"github.com/gorilla/mux"
+	"github.com/sajjad-MoBe/CloudKVStore/node/src/internal/shared"
 )
 
 // Partition represents a data partition
@@ -193,9 +194,19 @@ func (c *Controller) handleCreatePartition(w http.ResponseWriter, r *http.Reques
 		ID:       partition.ID,
 		Leader:   partition.Leader,
 		Replicas: partition.Replicas,
-		Status:   partition.Status,
+		Status:   "active", // Set status to active by default
 	}
 	c.state.Partitions[partition.ID] = newPartition
+
+	// Start replication for replicas
+	replicationManager := NewReplicationManager(c)
+	for _, replica := range partition.Replicas {
+		if err := replicationManager.StartReplication(partition.ID, partition.Leader, replica); err != nil {
+			shared.DefaultLogger.Error("Failed to start replication for partition %d: %v", partition.ID, err)
+			// Continue with other replicas even if one fails
+		}
+	}
+
 	w.WriteHeader(http.StatusCreated)
 }
 

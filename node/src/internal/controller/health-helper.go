@@ -3,6 +3,8 @@ package controller
 import (
 	"fmt"
 	"time"
+
+	"github.com/sajjad-MoBe/CloudKVStore/node/src/internal/shared"
 )
 
 // healthCheckLoop periodically checks node health
@@ -49,10 +51,23 @@ func (c *Controller) checkNodeHealth() {
 	defer c.state.mu.Unlock()
 
 	for id, node := range c.state.Nodes {
-		// Check if node is responsive
-		if time.Since(node.LastSeen) > 30*time.Second {
-			node.Status = "failed"
-			c.handleNodeFailure(id)
+		switch node.Status {
+		case "joining":
+			// If node is joining, mark it as active
+			node.Status = "active"
+			// Trigger rebalancing in a separate goroutine to avoid deadlock
+			go func(nodeID string) {
+				rebalanceManager := NewRebalanceManager(c)
+				if err := rebalanceManager.RebalancePartitions(); err != nil {
+					shared.DefaultLogger.Error("Failed to rebalance partitions after node %s became active: %v", nodeID, err)
+				}
+			}(id)
+		case "active":
+			// Check if node is responsive
+			if time.Since(node.LastSeen) > 30*time.Second {
+				node.Status = "failed"
+				c.handleNodeFailure(id)
+			}
 		}
 	}
 }

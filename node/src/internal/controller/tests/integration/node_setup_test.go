@@ -17,9 +17,21 @@ func TestNodeSetup(t *testing.T) {
 	err := helpers.RegisterNode(ctrl, nodeID, address)
 	assert.NoError(t, err)
 
-	status, err := helpers.GetNodeStatus(ctrl, nodeID)
-	assert.NoError(t, err)
-	assert.Equal(t, "active", status)
+	// Wait for node to become active with timeout
+	timeout := time.After(5 * time.Second)
+	tick := time.Tick(100 * time.Millisecond)
+	for {
+		select {
+		case <-timeout:
+			t.Fatal("Timeout waiting for node to become active")
+		case <-tick:
+			status, err := helpers.GetNodeStatus(ctrl, nodeID)
+			if err == nil && status == "active" {
+				goto NodeActive
+			}
+		}
+	}
+NodeActive:
 
 	// Load balancer config check
 	lbConfig, err := helpers.GetLoadBalancerConfig(ctrl)
@@ -54,10 +66,21 @@ func TestNodeHealthCheck(t *testing.T) {
 	err := helpers.RegisterNode(ctrl, nodeID, address)
 	assert.NoError(t, err)
 
-	// Test health check
-	status, err := helpers.GetNodeStatus(ctrl, nodeID)
-	assert.NoError(t, err)
-	assert.Equal(t, "active", status)
+	// Wait for node to become active with timeout
+	timeout := time.After(5 * time.Second)
+	tick := time.Tick(100 * time.Millisecond)
+	for {
+		select {
+		case <-timeout:
+			t.Fatal("Timeout waiting for node to become active")
+		case <-tick:
+			status, err := helpers.GetNodeStatus(ctrl, nodeID)
+			if err == nil && status == "active" {
+				goto NodeActive
+			}
+		}
+	}
+NodeActive:
 }
 
 func TestNodeRemoval(t *testing.T) {
@@ -96,8 +119,28 @@ func TestLoadBalancerIntegration(t *testing.T) {
 		assert.NoError(t, err)
 	}
 
-	// Wait for nodes to become active
-	time.Sleep(2 * time.Second)
+	// Wait for all nodes to become active with timeout
+	timeout := time.After(5 * time.Second)
+	tick := time.Tick(100 * time.Millisecond)
+	for {
+		select {
+		case <-timeout:
+			t.Fatal("Timeout waiting for nodes to become active")
+		case <-tick:
+			allActive := true
+			for nodeID := range nodes {
+				status, err := helpers.GetNodeStatus(ctrl, nodeID)
+				if err != nil || status != "active" {
+					allActive = false
+					break
+				}
+			}
+			if allActive {
+				goto AllNodesActive
+			}
+		}
+	}
+AllNodesActive:
 
 	// Verify all nodes are registered and active
 	registeredNodes, err := helpers.GetNodes(ctrl)

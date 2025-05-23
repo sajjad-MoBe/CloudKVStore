@@ -1,12 +1,14 @@
 package controller
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"sync"
 	"time"
 
 	"github.com/gorilla/mux"
+	"github.com/sajjad-MoBe/CloudKVStore/node/src/internal/shared"
 )
 
 // ClusterState represents the current state of the cluster
@@ -44,11 +46,10 @@ func (c *Controller) handleAddNode(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	node.Status = "active"
+	// Set initial status as joining
+	node.Status = "joining"
 	node.LastSeen = time.Now()
 	c.state.Nodes[node.ID] = &node
-
-	// TODO: Trigger rebalancing of partitions
 
 	w.WriteHeader(http.StatusCreated)
 }
@@ -65,9 +66,52 @@ func (c *Controller) handleRemoveNode(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Handle partitions before removing node
+	for _, partition := range c.state.Partitions {
+		if partition.Leader == nodeID {
+			// If this node was a leader, promote a replica
+			if len(partition.Replicas) > 0 {
+				newLeader := partition.Replicas[0]
+				partition.Leader = newLeader
+				partition.Replicas = partition.Replicas[1:]
+				partition.Status = "rebalancing"
+			} else {
+				partition.Status = "failed"
+			}
+		} else {
+			// Remove this node from replicas
+			newReplicas := make([]string, 0, len(partition.Replicas))
+			for _, replica := range partition.Replicas {
+				if replica != nodeID {
+					newReplicas = append(newReplicas, replica)
+				}
+			}
+			partition.Replicas = newReplicas
+		}
+	}
+
 	delete(c.state.Nodes, nodeID)
 
-	// TODO: Trigger rebalancing of partitions
+	// Trigger rebalancing in a separate goroutine with timeout
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+
+		rebalanceManager := NewRebalanceManager(c)
+		done := make(chan error, 1)
+		go func() {
+			done <- rebalanceManager.RebalancePartitions()
+		}()
+
+		select {
+		case err := <-done:
+			if err != nil {
+				shared.DefaultLogger.Error("Failed to rebalance partitions after removing node: %v", err)
+			}
+		case <-ctx.Done():
+			shared.DefaultLogger.Error("Rebalancing timed out after removing node")
+		}
+	}()
 
 	w.WriteHeader(http.StatusOK)
 }

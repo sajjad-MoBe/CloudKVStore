@@ -14,6 +14,26 @@ func TestNodeFailover(t *testing.T) {
 	ctrl := helpers.SetupTestController(t)
 	assert.NotNil(t, ctrl)
 
+	// Setup mock nodes
+	mockNodes := map[string]*helpers.MockNode{
+		"node-1": helpers.NewMockNode("localhost:8081"),
+		"node-2": helpers.NewMockNode("localhost:8082"),
+		"node-3": helpers.NewMockNode("localhost:8083"),
+	}
+
+	// Start mock nodes
+	for _, node := range mockNodes {
+		go node.Start()
+	}
+	defer func() {
+		for _, node := range mockNodes {
+			node.Stop()
+		}
+	}()
+
+	// Wait for mock nodes to start
+	time.Sleep(100 * time.Millisecond)
+
 	// Define partitions
 	partitions := []controller.Partition{
 		{ID: 1, Leader: "node-1", Replicas: []string{"node-2", "node-3"}, Status: "healthy"},

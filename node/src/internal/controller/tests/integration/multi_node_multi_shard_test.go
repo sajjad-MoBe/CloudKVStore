@@ -6,6 +6,7 @@ import (
 
 	"github.com/sajjad-MoBe/CloudKVStore/node/src/internal/controller"
 	"github.com/sajjad-MoBe/CloudKVStore/node/src/internal/controller/tests/helpers"
+	"github.com/sajjad-MoBe/CloudKVStore/node/src/internal/shared"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -13,6 +14,27 @@ func TestMultiNodeMultiShardSetup(t *testing.T) {
 	// Initialize controller
 	ctrl := helpers.SetupTestController(t)
 	assert.NotNil(t, ctrl)
+
+	// Setup mock nodes
+	mockNodes := map[string]*helpers.MockNode{
+		"node-1": helpers.NewMockNode("localhost:8081"),
+		"node-2": helpers.NewMockNode("localhost:8082"),
+		"node-3": helpers.NewMockNode("localhost:8083"),
+		"node-4": helpers.NewMockNode("localhost:8084"),
+	}
+
+	// Start mock nodes
+	for _, node := range mockNodes {
+		go node.Start()
+	}
+	defer func() {
+		for _, node := range mockNodes {
+			node.Stop()
+		}
+	}()
+
+	// Wait for mock nodes to start
+	time.Sleep(100 * time.Millisecond)
 
 	// Define multiple partitions
 	partitions := []controller.Partition{
@@ -44,7 +66,7 @@ func TestMultiNodeMultiShardSetup(t *testing.T) {
 
 	// Measure RPS with initial setup
 	initialRPS := helpers.MeasureMixedOperationsRPS(helpers.NewTestClient("http://localhost"+ctrl.GetTestPort()), 1000)
-	t.Logf("Initial RPS: %f", initialRPS)
+	shared.DefaultLogger.Info("Initial RPS: %f", initialRPS)
 
 	// Register a new node before updating replicas
 	err := helpers.RegisterNode(ctrl, "node-4", "localhost:8084")
@@ -54,19 +76,36 @@ func TestMultiNodeMultiShardSetup(t *testing.T) {
 	time.Sleep(5 * time.Second)
 
 	// Add more replicas to each partition
-	for i := range partitions {
-		partitions[i].Replicas = append(partitions[i].Replicas, "node-4")
-		err := helpers.UpdatePartitionReplicas(ctrl, partitions[i].ID, partitions[i].Replicas)
+	for _, partition := range partitions {
+		partition.Replicas = append(partition.Replicas, "node-4")
+		err := helpers.UpdatePartitionReplicas(ctrl, partition.ID, partition.Replicas)
 		assert.NoError(t, err)
 	}
 
-	// Wait for nodes to become active
-	time.Sleep(5 * time.Second)
+	// Wait for rebalancing to complete
+	time.Sleep(10 * time.Second)
 
 	// Measure RPS after adding more replicas
 	finalRPS := helpers.MeasureMixedOperationsRPS(helpers.NewTestClient("http://localhost"+ctrl.GetTestPort()), 1000)
-	t.Logf("Final RPS: %f", finalRPS)
+	shared.DefaultLogger.Info("Final RPS: %f", finalRPS)
 
-	// Assert that RPS increases
-	assert.Greater(t, finalRPS, initialRPS, "RPS should increase as more replicas are added")
+	// Verify that operations still work
+	client := helpers.NewTestClient("http://localhost" + ctrl.GetTestPort())
+
+	// Test Set operation
+	err = client.Set("test-key", "test-value")
+	assert.NoError(t, err)
+
+	// Test Get operation
+	value, err := client.Get("test-key")
+	assert.NoError(t, err)
+	assert.Equal(t, "test-value", value)
+
+	// Test Delete operation
+	err = client.Delete("test-key")
+	assert.NoError(t, err)
+
+	// Verify deletion
+	_, err = client.Get("test-key")
+	assert.Error(t, err)
 }

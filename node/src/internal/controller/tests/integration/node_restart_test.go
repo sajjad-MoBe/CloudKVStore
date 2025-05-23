@@ -14,6 +14,26 @@ func TestNodeRestart(t *testing.T) {
 	ctrl := helpers.SetupTestController(t)
 	assert.NotNil(t, ctrl)
 
+	// Setup mock nodes
+	mockNodes := map[string]*helpers.MockNode{
+		"node-1": helpers.NewMockNode("localhost:8081"),
+		"node-2": helpers.NewMockNode("localhost:8082"),
+		"node-3": helpers.NewMockNode("localhost:8083"),
+	}
+
+	// Start mock nodes
+	for _, node := range mockNodes {
+		go node.Start()
+	}
+	defer func() {
+		for _, node := range mockNodes {
+			node.Stop()
+		}
+	}()
+
+	// Wait for mock nodes to start
+	time.Sleep(100 * time.Millisecond)
+
 	// Define partitions
 	partitions := []controller.Partition{
 		{ID: 1, Leader: "node-1", Replicas: []string{"node-2", "node-3"}, Status: "healthy"},
@@ -55,7 +75,23 @@ func TestNodeRestart(t *testing.T) {
 		err = helpers.RegisterNode(ctrl, nodeID, nodes[nodeID])
 		assert.NoError(t, err)
 
-		// Wait for node to become active
+		// Wait for node to become active with timeout
+		timeout := time.After(10 * time.Second)
+		tick := time.Tick(100 * time.Millisecond)
+		for {
+			select {
+			case <-timeout:
+				t.Fatalf("Timeout waiting for node %s to become active", nodeID)
+			case <-tick:
+				status, err := helpers.GetNodeStatus(ctrl, nodeID)
+				if err == nil && status == "active" {
+					goto NodeActive
+				}
+			}
+		}
+	NodeActive:
+
+		// Wait for replication to catch up
 		time.Sleep(5 * time.Second)
 
 		// Verify that operations still work

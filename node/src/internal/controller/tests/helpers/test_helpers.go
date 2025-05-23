@@ -15,67 +15,30 @@ import (
 	"github.com/sajjad-MoBe/CloudKVStore/node/src/internal/wal"
 )
 
-// TestClient represents a test client for the key-value store
+// TestClient is a helper client for making HTTP requests
 type TestClient struct {
-	client    *http.Client
-	serverURL string
+	baseURL string
+	client  *http.Client
 }
 
 // NewTestClient creates a new test client
-func NewTestClient(serverURL string) *TestClient {
+func NewTestClient(baseURL string) *TestClient {
 	return &TestClient{
-		client:    &http.Client{},
-		serverURL: serverURL,
+		baseURL: baseURL,
+		client:  &http.Client{},
 	}
 }
 
-// Set sets a key-value pair
-func (c *TestClient) Set(key, value string) error {
-	url := fmt.Sprintf("%s/kv/%s", c.serverURL, key)
-
-	// Create request body with value
-	reqBody := struct {
-		Value string `json:"value"`
-	}{
-		Value: value,
-	}
-
-	jsonData, err := json.Marshal(reqBody)
-	if err != nil {
-		return fmt.Errorf("error marshaling request body: %v", err)
-	}
-
-	req, err := http.NewRequest(http.MethodPut, url, bytes.NewBuffer(jsonData))
-	if err != nil {
-		return fmt.Errorf("error creating request: %v", err)
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := c.client.Do(req)
-	if err != nil {
-		return fmt.Errorf("error executing request: %v", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("unexpected status code: %d", resp.StatusCode)
-	}
-
-	return nil
-}
-
-// Get retrieves a value for a key
+// Get makes a GET request to the specified endpoint
 func (c *TestClient) Get(key string) (string, error) {
-	url := fmt.Sprintf("%s/kv/%s", c.serverURL, key)
-	req, err := http.NewRequest(http.MethodGet, url, nil)
+	req, err := http.NewRequest("GET", c.baseURL+"/kv/"+key, nil)
 	if err != nil {
-		return "", fmt.Errorf("error creating request: %v", err)
+		return "", err
 	}
 
 	resp, err := c.client.Do(req)
 	if err != nil {
-		return "", fmt.Errorf("error executing request: %v", err)
+		return "", err
 	}
 	defer resp.Body.Close()
 
@@ -93,9 +56,37 @@ func (c *TestClient) Get(key string) (string, error) {
 	return result.Value, nil
 }
 
+// Set makes a POST request to set a key-value pair
+func (c *TestClient) Set(key, value string) error {
+	data := map[string]string{
+		"value": value,
+	}
+	jsonData, err := json.Marshal(data)
+	if err != nil {
+		return err
+	}
+
+	req, err := http.NewRequest("PUT", c.baseURL+"/kv/"+key, bytes.NewBuffer(jsonData))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+	}
+	return nil
+}
+
 // Delete removes a key-value pair
 func (c *TestClient) Delete(key string) error {
-	url := fmt.Sprintf("%s/kv/%s", c.serverURL, key)
+	url := fmt.Sprintf("%s/kv/%s", c.baseURL, key)
 	req, err := http.NewRequest(http.MethodDelete, url, nil)
 	if err != nil {
 		return fmt.Errorf("error creating request: %v", err)
@@ -188,7 +179,7 @@ func MeasureOperationRPS(client *TestClient, operation string, iterations int) f
 
 		if err != nil {
 			// Log error but continue
-			fmt.Printf("Error during %s operation: %v\n", operation, err)
+			shared.DefaultLogger.Error("Error during %s operation: %v", operation, err)
 		}
 	}
 
@@ -199,18 +190,34 @@ func MeasureOperationRPS(client *TestClient, operation string, iterations int) f
 // MeasureMixedOperationsRPS measures RPS for a mix of operations
 func MeasureMixedOperationsRPS(client *TestClient, iterations int) float64 {
 	start := time.Now()
+	errors := 0
 
 	for i := 0; i < iterations; i++ {
 		key := fmt.Sprintf("test-key-%d", i)
 		value := fmt.Sprintf("test-value-%d", i)
 
 		// Perform a mix of operations
-		_ = client.Set(key, value)
-		_, _ = client.Get(key)
-		_ = client.Delete(key)
+		if err := client.Set(key, value); err != nil {
+			shared.DefaultLogger.Error("Error during set operation: %v", err)
+			errors++
+			continue
+		}
+
+		if _, err := client.Get(key); err != nil {
+			shared.DefaultLogger.Error("Error during get operation: %v", err)
+			errors++
+			continue
+		}
+
+		if err := client.Delete(key); err != nil {
+			shared.DefaultLogger.Error("Error during delete operation: %v", err)
+			errors++
+			continue
+		}
 	}
 
 	duration := time.Since(start)
+	shared.DefaultLogger.Info("Mixed operations completed with %d errors", errors)
 	return float64(iterations*3) / duration.Seconds() // Multiply by 3 because we do 3 operations per iteration
 }
 
@@ -413,4 +420,66 @@ func UpdatePartitionReplicas(ctrl *controller.Controller, partitionID int, repli
 	}
 
 	return nil
+}
+
+// SetValue sets a key-value pair in the store
+func SetValue(ctrl *controller.Controller, key, value string) error {
+	client := NewTestClient("http://localhost" + ctrl.GetTestPort())
+	return client.Set(key, value)
+}
+
+// GetValue gets a value from the controller
+func GetValue(ctrl *controller.Controller, key string) (string, error) {
+	url := fmt.Sprintf("http://localhost%s/kv/%s", ctrl.GetTestPort(), key)
+	req, err := http.NewRequest(http.MethodGet, url, nil)
+	if err != nil {
+		return "", fmt.Errorf("error creating request: %v", err)
+	}
+
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("error executing request: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+	}
+
+	var result struct {
+		Value string `json:"value"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return "", fmt.Errorf("error decoding response: %v", err)
+	}
+
+	return result.Value, nil
+}
+
+// GetPartitions gets all partitions from the controller
+func GetPartitions(ctrl *controller.Controller) ([]*controller.Partition, error) {
+	url := fmt.Sprintf("http://localhost%s/partitions", ctrl.GetTestPort())
+	req, err := http.NewRequest(http.MethodGet, url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("error creating request: %v", err)
+	}
+
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("error executing request: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+	}
+
+	var partitions []*controller.Partition
+	if err := json.NewDecoder(resp.Body).Decode(&partitions); err != nil {
+		return nil, fmt.Errorf("error decoding response: %v", err)
+	}
+
+	return partitions, nil
 }
