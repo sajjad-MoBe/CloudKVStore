@@ -42,6 +42,11 @@ func (rm *ReplicationManager) StartReplication(partitionID int, sourceNode, targ
 		return fmt.Errorf("target node %s not found", targetNode)
 	}
 
+	// Verify partition status
+	if partition.Status != "active" {
+		return fmt.Errorf("partition %d is not active", partitionID)
+	}
+
 	// Start replication in a goroutine
 	go rm.replicatePartition(partitionID, sourceNode, targetNode)
 
@@ -63,7 +68,13 @@ func (rm *ReplicationManager) replicatePartition(partitionID int, sourceNode, ta
 	// 3. Verifying the replication was successful
 
 	// For now, we'll just simulate the replication
-	time.Sleep(2 * time.Second)
+	select {
+	case <-time.After(2 * time.Second):
+		// Replication completed
+	case <-ctx.Done():
+		rm.logger.Error("Replication timed out for partition %d", partitionID)
+		return
+	}
 
 	// Record metrics
 	duration := time.Since(startTime).Seconds()
