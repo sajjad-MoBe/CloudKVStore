@@ -2,11 +2,11 @@ package shared
 
 // a client request received by the server
 type Request struct {
-    Operation    string // "SET", "GET", "DELETE"
-    Key   string
-    Value string // Empty for GET/DELETE
+	Operation string // "SET", "GET", "DELETE"
+	Key       string
+	Value     string // Empty for GET/DELETE
 }
 
 type SetRequestBody struct {
-    Value string `json:"value"` 
+	Value string `json:"value"`
 }

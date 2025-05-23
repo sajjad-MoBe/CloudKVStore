@@ -3,12 +3,10 @@ package server
 import (
 	"net/http"
 
-	"strings"
 	"github.com/sajjad-MoBe/CloudKVStore/node/src/internal/shared"
 
 	"encoding/json"
-	"log"	
-
+	"log"
 )
 
 // @desc Set a key-value pair
@@ -36,7 +34,7 @@ func (s *Server) handleSet(w http.ResponseWriter, r *http.Request) {
 
 	log.Printf("Handling SET request: Key=%s, Value=%s", key, reqBody.Value)
 
-	err = s.store.Set(key, reqBody.Value) // Call set on servers' store 
+	err = s.store.Set(key, reqBody.Value) // Call set on servers' store
 
 	var resp shared.Response
 	if err != nil {
@@ -95,33 +93,32 @@ func (s *Server) handleDelete(w http.ResponseWriter, r *http.Request) {
 	log.Printf("Handling DELETE request: Key=%s", key)
 
 	err := s.store.Delete(key)
-	
+
 	var resp shared.Response
 	if err != nil {
 		//  deleting non-existent key is not handled for now maybe later
 		log.Printf("Error during delete (ignoring?): %v", err)
-        resp = shared.Response{Status: "OK"} 
-		sendJSONResponse(w, http.StatusOK, resp) 
+		resp = shared.Response{Status: "OK"}
+		sendJSONResponse(w, http.StatusOK, resp)
 	} else {
 		resp = shared.Response{Status: "OK"}
 		sendJSONResponse(w, http.StatusOK, resp)
 	}
 }
 
-
 func (s *Server) handleWAL(w http.ResponseWriter, r *http.Request) {
-    if r.Method != http.MethodGet {
-        http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
-        return
-    }
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
+		return
+	}
 
-    log.Printf("Handling WAL request")
-    
-    entries := s.store.GetWAL()
-    
-    w.Header().Set("Content-Type", "application/json")
-    json.NewEncoder(w).Encode(map[string]interface{}{
-        "status": "OK",
-        "wal": entries,
-    })
+	log.Printf("Handling WAL request")
+
+	entries := s.store.GetWAL()
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"status": "OK",
+		"wal":    entries,
+	})
 }
