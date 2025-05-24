@@ -16,6 +16,8 @@ services:
       interval: 10s
       timeout: 5s
       retries: 3
+    volumes:
+      - controller-data:/app/data
 
   node1:
     build:
@@ -90,6 +92,7 @@ networks:
     driver: bridge
 
 volumes:
+  controller-data:
   node1-data:
   node2-data:
   node3-data:
