@@ -124,17 +124,22 @@ func (c *Controller) handleRebalance(w http.ResponseWriter, r *http.Request) {
 
 // handleFailover handles failover for a partition
 func (c *Controller) handleFailover(partitionID int) error {
+	shared.DefaultLogger.Info("Handling failover for partition %d", partitionID)
+
 	// Get partition info
-	partition, err := c.partitionManager.GetPartitionInfo(partitionID)
-	if err != nil {
-		return fmt.Errorf("failed to get partition info: %v", err)
+	partition, exists := c.state.Partitions[partitionID]
+	if !exists {
+		return fmt.Errorf("partition %d not found", partitionID)
 	}
 
 	// Check if current leader is healthy
 	leaderStatus := c.healthManager.GetStatus()[partition.Leader]
 	if leaderStatus.Status == "ok" {
+		shared.DefaultLogger.Info("Leader %s is healthy for partition %d, no failover needed", partition.Leader, partitionID)
 		return nil // Leader is healthy, no need for failover
 	}
+
+	shared.DefaultLogger.Warn("Leader %s is unhealthy for partition %d, initiating failover", partition.Leader, partitionID)
 
 	// Find healthy replica to promote
 	var newLeader string
@@ -147,24 +152,47 @@ func (c *Controller) handleFailover(partitionID int) error {
 	}
 
 	if newLeader == "" {
+		shared.DefaultLogger.Error("No healthy replica available for failover of partition %d", partitionID)
 		return errors.New("no healthy replica available for failover")
 	}
 
+	shared.DefaultLogger.Info("Promoting replica %s to leader for partition %d", newLeader, partitionID)
+
 	// Update partition leader
-	if err := c.partitionManager.HandleFailover(partitionID, newLeader); err != nil {
-		return fmt.Errorf("failed to handle failover: %v", err)
+	partition.Leader = newLeader
+	partition.Status = "rebalancing"
+
+	// Remove the old leader from replicas if it's still there
+	newReplicas := make([]string, 0, len(partition.Replicas))
+	for _, replica := range partition.Replicas {
+		if replica != partition.Leader {
+			newReplicas = append(newReplicas, replica)
+		}
 	}
+	partition.Replicas = newReplicas
 
 	// Notify load balancer of leader change
 	if err := c.notifyLoadBalancer(partitionID, newLeader); err != nil {
+		shared.DefaultLogger.Error("Failed to notify load balancer of leader change: %v", err)
 		return fmt.Errorf("failed to notify load balancer: %v", err)
 	}
 
 	// Notify other nodes of leader change
 	if err := c.notifyNodes(partitionID, newLeader); err != nil {
+		shared.DefaultLogger.Error("Failed to notify nodes of leader change: %v", err)
 		return fmt.Errorf("failed to notify nodes: %v", err)
 	}
 
+	// Start replication for the new leader
+	replicationManager := NewReplicationManager(c)
+	for _, replica := range partition.Replicas {
+		if err := replicationManager.StartReplication(partitionID, newLeader, replica); err != nil {
+			shared.DefaultLogger.Error("Failed to start replication for partition %d: %v", partitionID, err)
+			// Continue with other replicas even if one fails
+		}
+	}
+
+	shared.DefaultLogger.Info("Failover completed for partition %d, new leader is %s", partitionID, newLeader)
 	return nil
 }
 
@@ -231,4 +259,27 @@ func (c *Controller) handleDeletePartition(w http.ResponseWriter, r *http.Reques
 	delete(c.state.Partitions, partitionID)
 
 	w.WriteHeader(http.StatusOK)
+}
+
+// handleGetPartition returns info for a specific partition by ID
+func (c *Controller) handleGetPartition(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	partitionIDStr := vars["id"]
+	partitionID, err := strconv.Atoi(partitionIDStr)
+	if err != nil {
+		http.Error(w, "Invalid partition ID", http.StatusBadRequest)
+		return
+	}
+
+	c.state.mu.RLock()
+	defer c.state.mu.RUnlock()
+
+	partition, exists := c.state.Partitions[partitionID]
+	if !exists {
+		http.Error(w, "Partition not found", http.StatusNotFound)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(partition)
 }

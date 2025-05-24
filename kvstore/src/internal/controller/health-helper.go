@@ -17,6 +17,7 @@ func (c *Controller) healthCheckLoop() {
 	for {
 		select {
 		case <-ticker.C:
+			c.printNodeStatuses() // Print node statuses before health check
 			c.checkNodeHealth()
 		case <-c.stopCh:
 			return
@@ -57,6 +58,8 @@ func (c *Controller) checkNodeHealth() {
 		case "joining":
 			// If node is joining, mark it as active
 			node.Status = "active"
+			// Also mark as healthy in health manager
+			c.healthManager.SetNodeStatus(id, "ok", "Node is active")
 			// Trigger rebalancing in a separate goroutine to avoid deadlock
 			go func(nodeID string) {
 				rebalanceManager := NewRebalanceManager(c)
@@ -65,31 +68,38 @@ func (c *Controller) checkNodeHealth() {
 				}
 			}(id)
 		case "active":
-			// Check if node is responsive
-			if time.Since(node.LastSeen) > 30*time.Second {
+			// Check if node is responsive by making a heartbeat request
+			url := fmt.Sprintf("http://%s/heartbeat", node.Address)
+			resp, err := http.Post(url, "application/json", nil)
+			if err != nil || resp.StatusCode != http.StatusOK {
+				shared.DefaultLogger.Warn("Node %s is not responding to heartbeat, marking as failed", id)
 				node.Status = "failed"
-				c.handleNodeFailure(id)
+				// Mark as unhealthy in health manager
+				c.healthManager.SetNodeStatus(id, "error", "Node failed health check")
+				// Handle node failure in a separate goroutine to avoid deadlock
+				go c.handleNodeFailure(id)
+			} else {
+				resp.Body.Close()
+				node.LastSeen = time.Now()
+				// Node is active and responsive, mark as healthy
+				c.healthManager.SetNodeStatus(id, "ok", "Node is active")
 			}
+		case "failed":
+			// Mark as unhealthy in health manager
+			c.healthManager.SetNodeStatus(id, "error", "Node is failed")
 		}
 	}
 }
 
 // handleNodeFailure handles a node failure
 func (c *Controller) handleNodeFailure(nodeID string) {
-	// Find partitions where this node was leader
-	for i, partition := range c.state.Partitions {
-		if partition.Leader == nodeID {
-			// Select new leader from replicas
-			if len(partition.Replicas) > 0 {
-				newLeader := partition.Replicas[0]
-				c.state.Partitions[i].Leader = newLeader
-				c.state.Partitions[i].Replicas = partition.Replicas[1:]
-				c.state.Partitions[i].Status = "rebalancing"
+	shared.DefaultLogger.Info("Handling failure of node %s", nodeID)
 
-				// TODO: Notify new leader and trigger re-replication
-			} else {
-				c.state.Partitions[i].Status = "failed"
-			}
+	// Find partitions where this node was leader
+	for partitionID := range c.state.Partitions {
+		// Call handleFailover for each partition
+		if err := c.handleFailover(partitionID); err != nil {
+			shared.DefaultLogger.Error("Failed to handle failover for partition %d: %v", partitionID, err)
 		}
 	}
 }
@@ -125,7 +135,17 @@ func (c *Controller) handleHeartbeat(w http.ResponseWriter, r *http.Request) {
 	}
 
 	node.LastSeen = time.Now()
+	shared.DefaultLogger.Info("Received heartbeat from node %s at %v", nodeID, node.LastSeen)
 	w.WriteHeader(http.StatusOK)
+}
+
+// printNodeStatuses logs the status of all nodes
+func (c *Controller) printNodeStatuses() {
+	c.state.mu.RLock()
+	defer c.state.mu.RUnlock()
+	for id, node := range c.state.Nodes {
+		shared.DefaultLogger.Info("Node %s: status=%s, last_seen=%v", id, node.Status, node.LastSeen)
+	}
 }
 
 // In setupRoutes, add the heartbeat endpoint
@@ -140,6 +160,7 @@ func (c *Controller) setupRoutes() {
 	// Partition management
 	c.router.HandleFunc("/partitions", c.handleListPartitions).Methods("GET")
 	c.router.HandleFunc("/partitions", c.handleCreatePartition).Methods("POST")
+	c.router.HandleFunc("/partitions/{id}", c.handleGetPartition).Methods("GET")
 	c.router.HandleFunc("/partitions/{id}", c.handleDeletePartition).Methods("DELETE")
 	c.router.HandleFunc("/partitions/{id}/leader", c.handleChangeLeader).Methods("PUT")
 	c.router.HandleFunc("/partitions/{id}/replicas", c.handleUpdateReplicas).Methods("PUT")
