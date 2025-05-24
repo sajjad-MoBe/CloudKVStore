@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sajjad-MoBe/CloudKVStore/node/src/internal/controller/tests/helpers"
-	"github.com/sajjad-MoBe/CloudKVStore/node/src/internal/shared"
+	"github.com/sajjad-MoBe/CloudKVStore/kvstore/src/internal/controller/tests/helpers"
+	"github.com/sajjad-MoBe/CloudKVStore/kvstore/src/internal/shared"
 	"github.com/stretchr/testify/assert"
 )
 

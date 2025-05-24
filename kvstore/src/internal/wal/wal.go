@@ -8,7 +8,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/sajjad-MoBe/CloudKVStore/node/src/internal/shared"
+	"github.com/sajjad-MoBe/CloudKVStore/kvstore/src/internal/shared"
 )
 
 // LogEntry represents a single entry in the WAL

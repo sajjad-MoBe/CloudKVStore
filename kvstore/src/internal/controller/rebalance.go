@@ -5,7 +5,7 @@ import (
 	"sort"
 	"time"
 
-	"github.com/sajjad-MoBe/CloudKVStore/node/src/internal/shared"
+	"github.com/sajjad-MoBe/CloudKVStore/kvstore/src/internal/shared"
 )
 
 // NodeLoad represents the load on a node

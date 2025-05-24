@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/gorilla/mux"
-	"github.com/sajjad-MoBe/CloudKVStore/node/src/internal/wal"
+	"github.com/sajjad-MoBe/CloudKVStore/kvstore/src/internal/wal"
 )
 
 // MockNode represents a mock node for testing

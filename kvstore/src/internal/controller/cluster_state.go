@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/gorilla/mux"
-	"github.com/sajjad-MoBe/CloudKVStore/node/src/internal/shared"
+	"github.com/sajjad-MoBe/CloudKVStore/kvstore/src/internal/shared"
 )
 
 // ClusterState represents the current state of the cluster

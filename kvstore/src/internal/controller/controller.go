@@ -6,8 +6,8 @@ import (
 	"time"
 
 	"github.com/gorilla/mux"
-	"github.com/sajjad-MoBe/CloudKVStore/node/src/internal/partition"
-	"github.com/sajjad-MoBe/CloudKVStore/node/src/internal/shared"
+	"github.com/sajjad-MoBe/CloudKVStore/kvstore/src/internal/partition"
+	"github.com/sajjad-MoBe/CloudKVStore/kvstore/src/internal/shared"
 )
 
 // Controller manages the cluster state

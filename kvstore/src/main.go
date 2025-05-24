@@ -10,10 +10,10 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/sajjad-MoBe/CloudKVStore/node/src/internal/controller"
-	"github.com/sajjad-MoBe/CloudKVStore/node/src/internal/partition"
-	"github.com/sajjad-MoBe/CloudKVStore/node/src/internal/shared"
-	"github.com/sajjad-MoBe/CloudKVStore/node/src/internal/wal"
+	"github.com/sajjad-MoBe/CloudKVStore/kvstore/src/internal/controller"
+	"github.com/sajjad-MoBe/CloudKVStore/kvstore/src/internal/partition"
+	"github.com/sajjad-MoBe/CloudKVStore/kvstore/src/internal/shared"
+	"github.com/sajjad-MoBe/CloudKVStore/kvstore/src/internal/wal"
 )
 
 func main() {

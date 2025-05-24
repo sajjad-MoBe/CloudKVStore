@@ -1,7 +1,7 @@
 package partition
 
 import (
-	"github.com/sajjad-MoBe/CloudKVStore/node/src/internal/wal"
+	"github.com/sajjad-MoBe/CloudKVStore/kvstore/src/internal/wal"
 	"sync"
 	"time"
 )

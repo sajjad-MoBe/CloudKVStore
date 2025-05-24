@@ -7,8 +7,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/sajjad-MoBe/CloudKVStore/node/src/internal/shared"
-	"github.com/sajjad-MoBe/CloudKVStore/node/src/internal/wal"
+	"github.com/sajjad-MoBe/CloudKVStore/kvstore/src/internal/shared"
+	"github.com/sajjad-MoBe/CloudKVStore/kvstore/src/internal/wal"
 )
 
 // PartitionManager handles partition-level operations and replication
