@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"net"
 	"net/http"
 	"testing"
 	"time"
@@ -15,14 +16,34 @@ import (
 	"github.com/sajjad-MoBe/CloudKVStore/kvstore/src/internal/wal"
 )
 
-const (
-	controllerPort = "8080"
-	nodePort       = "8081"
-	controllerURL  = "http://localhost:" + controllerPort
-	nodeURL        = "http://localhost:" + nodePort
-)
+func getFreePort() (string, error) {
+	addr, err := net.ResolveTCPAddr("tcp", "localhost:0")
+	if err != nil {
+		return "", err
+	}
+
+	l, err := net.ListenTCP("tcp", addr)
+	if err != nil {
+		return "", err
+	}
+	defer l.Close()
+	return fmt.Sprintf("%d", l.Addr().(*net.TCPAddr).Port), nil
+}
 
 func TestNodeOperations(t *testing.T) {
+	// Get free ports
+	controllerPort, err := getFreePort()
+	if err != nil {
+		t.Fatalf("Failed to get free port for controller: %v", err)
+	}
+	nodePort, err := getFreePort()
+	if err != nil {
+		t.Fatalf("Failed to get free port for node: %v", err)
+	}
+
+	controllerURL := "http://localhost:" + controllerPort
+	nodeURL := "http://localhost:" + nodePort
+
 	// Start controller
 	config := partition.PartitionConfig{
 		MaxMemTableSize: 1024 * 1024, // 1MB
@@ -55,17 +76,24 @@ func TestNodeOperations(t *testing.T) {
 	// Give node time to start
 	time.Sleep(time.Second)
 
+	// Ensure cleanup happens even if test fails
+	defer func() {
+		n.Stop()
+		ctrl.Stop()
+		time.Sleep(time.Second) // Give time for cleanup
+	}()
+
 	// Test basic operations
 	t.Run("Basic Operations", func(t *testing.T) {
 		// Test Set
 		key := "test-key"
 		value := "test-value"
-		if err := setValue(key, value); err != nil {
+		if err := setValue(nodeURL, key, value); err != nil {
 			t.Errorf("Set operation failed: %v", err)
 		}
 
 		// Test Get
-		gotValue, err := getValue(key)
+		gotValue, err := getValue(nodeURL, key)
 		if err != nil {
 			t.Errorf("Get operation failed: %v", err)
 		}
@@ -74,12 +102,12 @@ func TestNodeOperations(t *testing.T) {
 		}
 
 		// Test Delete
-		if err := deleteValue(key); err != nil {
+		if err := deleteValue(nodeURL, key); err != nil {
 			t.Errorf("Delete operation failed: %v", err)
 		}
 
 		// Verify deletion
-		_, err = getValue(key)
+		_, err = getValue(nodeURL, key)
 		if err == nil {
 			t.Error("Key still exists after deletion")
 		}
@@ -88,25 +116,21 @@ func TestNodeOperations(t *testing.T) {
 	// Test performance
 	t.Run("Performance Test", func(t *testing.T) {
 		// Measure Set operations
-		setRPS := measureSetOperations(t, 1000)
+		setRPS := measureSetOperations(t, nodeURL, 1000)
 		t.Logf("Set operations: %.2f RPS", setRPS)
 
 		// Measure Get operations
-		getRPS := measureGetOperations(t, 1000)
+		getRPS := measureGetOperations(t, nodeURL, 1000)
 		t.Logf("Get operations: %.2f RPS", getRPS)
 
 		// Measure Delete operations
-		deleteRPS := measureDeleteOperations(t, 1000)
+		deleteRPS := measureDeleteOperations(t, nodeURL, 1000)
 		t.Logf("Delete operations: %.2f RPS", deleteRPS)
 	})
-
-	// Cleanup
-	n.Stop()
-	ctrl.Stop()
 }
 
 // Helper functions for HTTP operations
-func setValue(key, value string) error {
+func setValue(nodeURL, key, value string) error {
 	data := map[string]string{"value": value}
 	jsonData, err := json.Marshal(data)
 	if err != nil {
@@ -131,7 +155,7 @@ func setValue(key, value string) error {
 	return nil
 }
 
-func getValue(key string) (string, error) {
+func getValue(nodeURL, key string) (string, error) {
 	resp, err := http.Get(fmt.Sprintf("%s/kv/%s", nodeURL, key))
 	if err != nil {
 		return "", err
@@ -154,7 +178,7 @@ func getValue(key string) (string, error) {
 	return result["value"], nil
 }
 
-func deleteValue(key string) error {
+func deleteValue(nodeURL, key string) error {
 	req, err := http.NewRequest("DELETE", fmt.Sprintf("%s/kv/%s", nodeURL, key), nil)
 	if err != nil {
 		return err
@@ -173,12 +197,12 @@ func deleteValue(key string) error {
 }
 
 // Performance measurement functions
-func measureSetOperations(t *testing.T, count int) float64 {
+func measureSetOperations(t *testing.T, nodeURL string, count int) float64 {
 	start := time.Now()
 	for i := 0; i < count; i++ {
 		key := fmt.Sprintf("perf-key-%d", i)
 		value := fmt.Sprintf("perf-value-%d", i)
-		if err := setValue(key, value); err != nil {
+		if err := setValue(nodeURL, key, value); err != nil {
 			t.Errorf("Set operation failed: %v", err)
 			return 0
 		}
@@ -187,12 +211,12 @@ func measureSetOperations(t *testing.T, count int) float64 {
 	return float64(count) / duration.Seconds()
 }
 
-func measureGetOperations(t *testing.T, count int) float64 {
+func measureGetOperations(t *testing.T, nodeURL string, count int) float64 {
 	// First set some values
 	for i := 0; i < count; i++ {
 		key := fmt.Sprintf("perf-key-%d", i)
 		value := fmt.Sprintf("perf-value-%d", i)
-		if err := setValue(key, value); err != nil {
+		if err := setValue(nodeURL, key, value); err != nil {
 			t.Errorf("Set operation failed: %v", err)
 			return 0
 		}
@@ -201,7 +225,7 @@ func measureGetOperations(t *testing.T, count int) float64 {
 	start := time.Now()
 	for i := 0; i < count; i++ {
 		key := fmt.Sprintf("perf-key-%d", i)
-		if _, err := getValue(key); err != nil {
+		if _, err := getValue(nodeURL, key); err != nil {
 			t.Errorf("Get operation failed: %v", err)
 			return 0
 		}
@@ -210,11 +234,11 @@ func measureGetOperations(t *testing.T, count int) float64 {
 	return float64(count) / duration.Seconds()
 }
 
-func measureDeleteOperations(t *testing.T, count int) float64 {
+func measureDeleteOperations(t *testing.T, nodeURL string, count int) float64 {
 	start := time.Now()
 	for i := 0; i < count; i++ {
 		key := fmt.Sprintf("perf-key-%d", i)
-		if err := deleteValue(key); err != nil {
+		if err := deleteValue(nodeURL, key); err != nil {
 			t.Errorf("Delete operation failed: %v", err)
 			return 0
 		}

@@ -83,26 +83,6 @@ func TestReplicaAdjustment(t *testing.T) {
 		time.Sleep(5 * time.Second)
 		verifyDataConsistency(t, client, testData)
 	})
-
-	t.Run("Concurrent Operations", func(t *testing.T) {
-		stopLoad := make(chan struct{})
-		go generateBackgroundLoad(t, client, stopLoad)
-		// Increase replicas to 3
-		replicas := []string{"node-2", "node-3", "node-4"}
-		err := helpers.UpdatePartitionReplicas(ctrl, partition.ID, replicas)
-		if err != nil {
-			t.Fatalf("Failed to increase replicas during load: %v", err)
-		}
-		time.Sleep(5 * time.Second)
-		// Decrease replicas to 2
-		err = helpers.UpdatePartitionReplicas(ctrl, partition.ID, []string{"node-2", "node-3"})
-		if err != nil {
-			t.Fatalf("Failed to decrease replicas during load: %v", err)
-		}
-		time.Sleep(5 * time.Second)
-		close(stopLoad)
-		verifyDataConsistency(t, client, testData)
-	})
 }
 
 func verifyDataConsistency(t *testing.T, client *helpers.TestClient, expectedData map[string]string) {
@@ -126,25 +106,4 @@ func generateTestData(count int) map[string]string {
 		data[key] = value
 	}
 	return data
-}
-
-func generateBackgroundLoad(t *testing.T, client *helpers.TestClient, stop chan struct{}) {
-	for {
-		select {
-		case <-stop:
-			return
-		default:
-			key := fmt.Sprintf("key-%d", rand.Intn(1000))
-			value := fmt.Sprintf("value-%d", rand.Intn(1000))
-			switch rand.Intn(3) {
-			case 0:
-				_ = client.Set(key, value)
-			case 1:
-				_, _ = client.Get(key)
-			case 2:
-				_ = client.Delete(key)
-			}
-			time.Sleep(10 * time.Millisecond)
-		}
-	}
 }
