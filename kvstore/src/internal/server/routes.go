@@ -2,6 +2,7 @@ package server
 
 import (
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/sajjad-MoBe/CloudKVStore/kvstore/src/internal/shared"
@@ -122,4 +123,39 @@ func (s *Server) handleWAL(w http.ResponseWriter, r *http.Request) {
 		"status": "OK",
 		"wal":    entries,
 	})
+}
+
+// handleWALEntries handles GET requests for WAL entries for a specific partition
+func (s *Server) handleWALEntries(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	partitionID := r.URL.Query().Get("partition")
+	if partitionID == "" {
+		http.Error(w, "Missing partition query parameter", http.StatusBadRequest)
+		return
+	}
+
+	// Convert partitionID from string to int
+	id, err := strconv.Atoi(partitionID)
+	if err != nil {
+		http.Error(w, "invalid partition ID", http.StatusBadRequest)
+		return
+	}
+
+	// Get all WAL entries
+	entries := s.store.GetWAL()
+
+	// Filter entries by partition
+	var filteredEntries []shared.OperationLogEntry
+	for _, entry := range entries {
+		if entry.Partition == id {
+			filteredEntries = append(filteredEntries, entry)
+		}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(filteredEntries)
 }

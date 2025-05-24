@@ -52,16 +52,16 @@ func (pm *PartitionManager) CreatePartition(id int, leader string, replicas []st
 		return errors.New("partition already exists")
 	}
 
-	// Create WAL manager for the partition
-	walManager, err := wal.NewWALManager(fmt.Sprintf("wal/partition_%d", id), pm.config.WALConfig)
+	// Create WAL for the partition
+	walInstance, err := wal.NewWAL(fmt.Sprintf("wal/partition_%d", id), pm.config.WALConfig.MaxFileSize)
 	if err != nil {
-		return fmt.Errorf("failed to create WAL manager: %v", err)
+		return fmt.Errorf("failed to create WAL: %v", err)
 	}
 
 	// Create initial memtable
 	memTable := &MemTable{
 		data:    make(map[string][]byte),
-		wal:     walManager,
+		wal:     walInstance,
 		level:   0,
 		maxSize: pm.config.MaxMemTableSize,
 	}
@@ -76,7 +76,6 @@ func (pm *PartitionManager) CreatePartition(id int, leader string, replicas []st
 	}
 
 	pm.partitions[id] = partition
-	pm.walManagers[id] = walManager
 	pm.memTables[id] = memTable
 	pm.replicationStreams[id] = make(map[string]*ReplicationStream)
 
@@ -310,16 +309,16 @@ func (pm *PartitionManager) AddPartition() error {
 
 	newPartitionID := len(pm.partitions)
 
-	// Create WAL manager for the partition
-	walManager, err := wal.NewWALManager(fmt.Sprintf("wal/partition_%d", newPartitionID), pm.config.WALConfig)
+	// Create WAL for the partition
+	walInstance, err := wal.NewWAL(fmt.Sprintf("wal/partition_%d", newPartitionID), pm.config.WALConfig.MaxFileSize)
 	if err != nil {
-		return fmt.Errorf("failed to create WAL manager: %v", err)
+		return fmt.Errorf("failed to create WAL: %v", err)
 	}
 
 	// Create initial memtable
 	memTable := &MemTable{
 		data:    make(map[string][]byte),
-		wal:     walManager,
+		wal:     walInstance,
 		level:   0,
 		maxSize: pm.config.MaxMemTableSize,
 	}
@@ -332,7 +331,6 @@ func (pm *PartitionManager) AddPartition() error {
 	}
 
 	pm.partitions[newPartitionID] = partition
-	pm.walManagers[newPartitionID] = walManager
 	pm.memTables[newPartitionID] = memTable
 	pm.replicationStreams[newPartitionID] = make(map[string]*ReplicationStream)
 
@@ -358,7 +356,6 @@ func (pm *PartitionManager) RemovePartition(partitionID int) error {
 
 	// Remove partition data
 	delete(pm.partitions, partitionID)
-	delete(pm.walManagers, partitionID)
 	delete(pm.memTables, partitionID)
 	delete(pm.replicationStreams, partitionID)
 
@@ -469,4 +466,23 @@ func (pm *PartitionManager) Delete(key string) error {
 	}
 	delete(pm.store, key)
 	return nil
+}
+
+// GetWALEntries retrieves WAL entries for a specific partition
+func (pm *PartitionManager) GetWALEntries(partitionID int) []wal.LogEntry {
+	pm.mu.RLock()
+	defer pm.mu.RUnlock()
+
+	partition, exists := pm.partitions[partitionID]
+	if !exists {
+		return nil
+	}
+
+	// Retrieve WAL entries from the partition's WAL
+	entries, err := partition.activeMemTable.wal.Read()
+	if err != nil {
+		return nil
+	}
+
+	return entries
 }

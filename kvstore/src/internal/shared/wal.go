@@ -10,5 +10,6 @@ type OperationLogEntry struct {
 	Key       string
 	Value     string    // Empty for DELETE
 	Timestamp time.Time `json:"timestamp"`
+	Partition int       `json:"partition"` // Partition ID for the entry
 	// Add Timestamp or sequence number later if needed
 }

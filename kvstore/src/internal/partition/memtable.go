@@ -1,15 +1,16 @@
 package partition
 
 import (
-	"github.com/sajjad-MoBe/CloudKVStore/kvstore/src/internal/wal"
 	"sync"
 	"time"
+
+	"github.com/sajjad-MoBe/CloudKVStore/kvstore/src/internal/wal"
 )
 
 // MemTable represents an LSM-like in-memory table
 type MemTable struct {
 	data    map[string][]byte
-	wal     *wal.WALManager
+	wal     *wal.WAL
 	mu      sync.RWMutex
 	level   int
 	maxSize int64

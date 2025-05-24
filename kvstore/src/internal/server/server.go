@@ -2,8 +2,9 @@ package server
 
 import (
 	"context"
-	"github.com/sajjad-MoBe/CloudKVStore/kvstore/src/internal/shared"
 	"net/http"
+
+	"github.com/sajjad-MoBe/CloudKVStore/kvstore/src/internal/shared"
 
 	"fmt"
 	"log"
@@ -44,6 +45,7 @@ func (s *Server) Start() error {
 	})
 
 	mux.HandleFunc("/wal", s.handleWAL)
+	mux.HandleFunc("/wal/entries", s.handleWALEntries)
 
 	log.Printf("Node HTTP server starting on %s", s.address)
 

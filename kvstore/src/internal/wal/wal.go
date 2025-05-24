@@ -103,7 +103,7 @@ func (w *WAL) Write(operation, key string, value interface{}, partition int) err
 	return nil
 }
 
-// Read reads all entries from the WAL
+// Read retrieves all WAL entries
 func (w *WAL) Read() ([]LogEntry, error) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
@@ -170,4 +170,68 @@ func (w *WAL) Close() error {
 	}
 
 	return nil
+}
+
+// Append writes an entry to the WAL
+func (w *WAL) Append(entry *WALEntry) error {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	// Marshal entry to JSON
+	data, err := json.Marshal(entry)
+	if err != nil {
+		return fmt.Errorf("failed to marshal WAL entry: %v", err)
+	}
+
+	// Check if we need to rotate the log
+	if w.currentSize+int64(len(data)) > w.maxSize {
+		if err := w.rotate(); err != nil {
+			return fmt.Errorf("failed to rotate WAL: %v", err)
+		}
+	}
+
+	// Write entry to file
+	if _, err := w.file.Write(append(data, '\n')); err != nil {
+		return fmt.Errorf("failed to write to WAL: %v", err)
+	}
+
+	w.currentSize += int64(len(data)) + 1
+
+	if w.metrics != nil {
+		w.metrics.RecordMetric(shared.MetricWALWriteCount, shared.Counter, 1, nil)
+		w.metrics.RecordMetric(shared.MetricWALSize, shared.Gauge, float64(w.currentSize), nil)
+	}
+
+	return nil
+}
+
+// Recover replays WAL entries to restore state
+func (w *WAL) Recover(handler func(*WALEntry) error) error {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	// Reset file position
+	if _, err := w.file.Seek(0, 0); err != nil {
+		return fmt.Errorf("failed to seek to start of WAL: %v", err)
+	}
+
+	decoder := json.NewDecoder(w.file)
+	for decoder.More() {
+		var entry WALEntry
+		if err := decoder.Decode(&entry); err != nil {
+			return fmt.Errorf("failed to decode WAL entry: %v", err)
+		}
+		if err := handler(&entry); err != nil {
+			return fmt.Errorf("failed to handle WAL entry: %v", err)
+		}
+	}
+
+	return nil
+}
+
+// GetMetrics returns the current WAL metrics
+func (w *WAL) GetMetrics() *shared.MetricsCollector {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.metrics
 }

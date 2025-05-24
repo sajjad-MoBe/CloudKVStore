@@ -3,6 +3,8 @@ package partition
 import (
 	"sync/atomic"
 	"time"
+
+	"github.com/sajjad-MoBe/CloudKVStore/kvstore/src/internal/shared"
 )
 
 // Snapshot represents a point-in-time view of a partition
@@ -50,7 +52,12 @@ func (pm *PartitionManager) createSnapshot(partition *PartitionData) (*Snapshot,
 
 	// Get WAL offset
 	metrics := partition.activeMemTable.wal.GetMetrics()
-	snapshot.WALOffset = metrics.TotalEntries
+	metric := metrics.GetMetric(shared.MetricWALWriteCount)
+	var totalEntries int64
+	if metric != nil {
+		totalEntries = int64(metric.Value)
+	}
+	snapshot.WALOffset = totalEntries
 
 	return snapshot, nil
 }

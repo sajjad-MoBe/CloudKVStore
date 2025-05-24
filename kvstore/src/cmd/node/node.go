@@ -3,6 +3,7 @@ package node
 import (
 	"encoding/json"
 	"net/http"
+	"strconv"
 	"sync"
 	"time"
 
@@ -70,6 +71,8 @@ func (n *Node) setupRoutes() {
 	n.router.HandleFunc("/kv/{key}", n.handleGetValue).Methods("GET")
 	n.router.HandleFunc("/kv/{key}", n.handleSetValue).Methods("PUT")
 	n.router.HandleFunc("/kv/{key}", n.handleDeleteValue).Methods("DELETE")
+	n.router.HandleFunc("/wal/entries", n.handleWALEntries).Methods("GET")
+	n.router.HandleFunc("/wal/apply", n.handleWALApply).Methods("POST")
 }
 
 // heartbeatLoop sends periodic heartbeats to the controller
@@ -156,6 +159,44 @@ func (n *Node) handleDeleteValue(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+
+	w.WriteHeader(http.StatusOK)
+}
+
+// handleWALEntries handles GET requests for WAL entries for a specific partition
+func (n *Node) handleWALEntries(w http.ResponseWriter, r *http.Request) {
+	partitionID := r.URL.Query().Get("partition")
+	id, err := strconv.Atoi(partitionID)
+	if err != nil {
+		http.Error(w, "invalid partition ID", http.StatusBadRequest)
+		return
+	}
+
+	// Get WAL entries for the specified partition
+	entries := n.partitionManager.GetWALEntries(id)
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(entries)
+}
+
+// handleWALApply handles POST requests to apply WAL entries to a partition
+func (n *Node) handleWALApply(w http.ResponseWriter, r *http.Request) {
+	type applyRequest struct {
+		PartitionID int            `json:"partition_id"`
+		Entries     []wal.LogEntry `json:"entries"`
+	}
+	var req applyRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	// Apply entries to the partition
+	// (You may want to add logic to actually apply these to the partition's WAL and state)
+	// For now, just log and return OK
+	// TODO: Implement actual application logic
+	_ = req.PartitionID
+	_ = req.Entries
 
 	w.WriteHeader(http.StatusOK)
 }

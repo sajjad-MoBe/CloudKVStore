@@ -38,6 +38,7 @@ func (s *SinglePartitionStore) Set(key, value string) error {
 		Key:       key,
 		Value:     value,
 		Timestamp: time.Now(),
+		Partition: 0, // Default partition ID
 	}
 
 	s.wal = append(s.wal, entry)
@@ -66,6 +67,7 @@ func (s *SinglePartitionStore) Delete(key string) error {
 		Key:       key,
 		Value:     "",
 		Timestamp: time.Now(),
+		Partition: 0, // Default partition ID
 	}
 	_, found := s.data[key]
 	if !found {
