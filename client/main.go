@@ -24,10 +24,10 @@ type Client struct {
 }
 
 type Response struct {
-	Success bool        `json:"success"`
-	Value   string      `json:"value,omitempty"`
-	Error   string      `json:"error,omitempty"`
-	Data    interface{} `json:"data,omitempty"`
+	Status string      `json:"status"`          // "OK", "ERROR", "NOT_FOUND", ...
+	Value  string      `json:"value,omitempty"` // only for GET
+	Error  string      `json:"error,omitempty"` // error message if Status is "ERROR"
+	Data   interface{} `json:"data,omitempty"`  // for additional data
 }
 
 func NewClient(nodeAddr string) *Client {
@@ -64,7 +64,7 @@ func (c *Client) Set(key, value string) error {
 		return fmt.Errorf("failed to decode response: %v", err)
 	}
 
-	if !response.Success {
+	if response.Status != "OK" {
 		return fmt.Errorf("server error: %s", response.Error)
 	}
 
@@ -85,7 +85,7 @@ func (c *Client) Get(key string) (string, error) {
 		return "", fmt.Errorf("failed to decode response: %v", err)
 	}
 
-	if !response.Success {
+	if response.Status != "OK" {
 		return "", fmt.Errorf("server error: %s", response.Error)
 	}
 
@@ -111,7 +111,7 @@ func (c *Client) Delete(key string) error {
 		return fmt.Errorf("failed to decode response: %v", err)
 	}
 
-	if !response.Success {
+	if response.Status != "OK" {
 		return fmt.Errorf("server error: %s", response.Error)
 	}
 
@@ -132,7 +132,7 @@ func (c *Client) GetClusterStatus() (map[string]interface{}, error) {
 		return nil, fmt.Errorf("failed to decode response: %v", err)
 	}
 
-	if !response.Success {
+	if response.Status != "OK" {
 		return nil, fmt.Errorf("server error: %s", response.Error)
 	}
 
