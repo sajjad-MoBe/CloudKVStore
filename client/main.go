@@ -59,14 +59,16 @@ func (c *Client) Set(key, value string) error {
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode != http.StatusOK {
-		var response Response
-		if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
-			return fmt.Errorf("failed to decode error response: %v", err)
-		}
+	var response Response
+	if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
+		return fmt.Errorf("failed to decode response: %v", err)
+	}
+
+	if !response.Success {
 		return fmt.Errorf("server error: %s", response.Error)
 	}
 
+	log.Printf("Set operation successful for key: %s", key)
 	return nil
 }
 
@@ -87,6 +89,7 @@ func (c *Client) Get(key string) (string, error) {
 		return "", fmt.Errorf("server error: %s", response.Error)
 	}
 
+	log.Printf("Get operation successful for key: %s, value: %s", key, response.Value)
 	return response.Value, nil
 }
 
@@ -103,14 +106,16 @@ func (c *Client) Delete(key string) error {
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode != http.StatusOK {
-		var response Response
-		if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
-			return fmt.Errorf("failed to decode error response: %v", err)
-		}
+	var response Response
+	if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
+		return fmt.Errorf("failed to decode response: %v", err)
+	}
+
+	if !response.Success {
 		return fmt.Errorf("server error: %s", response.Error)
 	}
 
+	log.Printf("Delete operation successful for key: %s", key)
 	return nil
 }
 
