@@ -121,12 +121,28 @@ func (n *Node) handleGetValue(w http.ResponseWriter, r *http.Request) {
 
 	value, err := n.partitionManager.Get(key)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusNotFound)
+		response := struct {
+			Success bool   `json:"success"`
+			Error   string `json:"error"`
+		}{
+			Success: false,
+			Error:   err.Error(),
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotFound)
+		json.NewEncoder(w).Encode(response)
 		return
 	}
 
+	response := struct {
+		Success bool   `json:"success"`
+		Value   string `json:"value"`
+	}{
+		Success: true,
+		Value:   value,
+	}
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{"value": value})
+	json.NewEncoder(w).Encode(response)
 }
 
 // handleSetValue handles PUT requests for key-value pairs
@@ -138,16 +154,40 @@ func (n *Node) handleSetValue(w http.ResponseWriter, r *http.Request) {
 		Value string `json:"value"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&data); err != nil {
-		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		response := struct {
+			Success bool   `json:"success"`
+			Error   string `json:"error"`
+		}{
+			Success: false,
+			Error:   "Invalid request body",
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(response)
 		return
 	}
 
 	if err := n.partitionManager.Set(key, data.Value); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		response := struct {
+			Success bool   `json:"success"`
+			Error   string `json:"error"`
+		}{
+			Success: false,
+			Error:   err.Error(),
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(response)
 		return
 	}
 
-	w.WriteHeader(http.StatusOK)
+	response := struct {
+		Success bool `json:"success"`
+	}{
+		Success: true,
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response)
 }
 
 // handleDeleteValue handles DELETE requests for key-value pairs
@@ -156,11 +196,26 @@ func (n *Node) handleDeleteValue(w http.ResponseWriter, r *http.Request) {
 	key := vars["key"]
 
 	if err := n.partitionManager.Delete(key); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		response := struct {
+			Success bool   `json:"success"`
+			Error   string `json:"error"`
+		}{
+			Success: false,
+			Error:   err.Error(),
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(response)
 		return
 	}
 
-	w.WriteHeader(http.StatusOK)
+	response := struct {
+		Success bool `json:"success"`
+	}{
+		Success: true,
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response)
 }
 
 // handleWALEntries handles GET requests for WAL entries for a specific partition
