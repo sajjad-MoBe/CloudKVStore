@@ -1,2 +1,76 @@
-version: "3.3"
+version: '3.8'
+
 services:
+  node1:
+    build:
+      context: ./kvstore
+      dockerfile: Dockerfile
+    ports:
+      - "8081:8081"
+    command: ["./kvstore", "--id", "node-1", "--port", "8081"]
+    volumes:
+      - node1_data:/app/data
+    networks:
+      - kvstore-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8081/cluster/status"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  node2:
+    build:
+      context: ./kvstore
+      dockerfile: Dockerfile
+    ports:
+      - "8082:8082"
+    command: ["./kvstore", "--id", "node-2", "--port", "8082"]
+    volumes:
+      - node2_data:/app/data
+    networks:
+      - kvstore-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8082/cluster/status"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  node3:
+    build:
+      context: ./kvstore
+      dockerfile: Dockerfile
+    ports:
+      - "8083:8083"
+    command: ["./kvstore", "--id", "node-3", "--port", "8083"]
+    volumes:
+      - node3_data:/app/data
+    networks:
+      - kvstore-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8083/cluster/status"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  client:
+    build:
+      context: ./client
+      dockerfile: Dockerfile
+    depends_on:
+      node1:
+        condition: service_healthy
+      node2:
+        condition: service_healthy
+      node3:
+        condition: service_healthy
+    networks:
+      - kvstore-network
+
+networks:
+  kvstore-network:
+    driver: bridge
+
+volumes:
+  node1_data:
+  node2_data:
+  node3_data:

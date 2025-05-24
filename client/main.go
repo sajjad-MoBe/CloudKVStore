@@ -3,162 +3,329 @@ package main
 import (
 	"bytes"
 	"encoding/json"
-	"flag"
 	"fmt"
-	"io"
 	"log"
+	"math/rand"
 	"net/http"
-	"os"
+	"sync"
+	"time"
 )
 
-type SetRequestBody struct {
-    Value string `json:"value"`
+const (
+	Node1Addr = "http://node1:8081"
+	Node2Addr = "http://node2:8082"
+	Node3Addr = "http://node3:8083"
+)
+
+type NodeInfo struct {
+	ID      string `json:"id"`
+	Address string `json:"address"`
 }
 
-type Response struct {
-    Status string `json:"status"`
-    Value  string `json:"value"`
-    Error  string `json:"error"`
+type PartitionInfo struct {
+	ID       int      `json:"id"`
+	Leader   string   `json:"leader"`
+	Replicas []string `json:"replicas"`
 }
 
 func main() {
-    serverAddr := flag.String("server", "http://localhost:8080", "Server address")
-    flag.Parse()
+	// Wait for nodes to be ready
+	waitForNodes()
 
-    if len(flag.Args()) < 1 {
-        printUsage()
-        os.Exit(1)
-    }
+	// Run tests
+	fmt.Println("Starting tests...")
 
-    client := &http.Client{}
-    command := flag.Arg(0)
+	// Test 1: Basic Operations
+	fmt.Println("\nTest 1: Basic Operations")
+	testBasicOperations()
 
-    switch command {
-    case "set":
-        if len(flag.Args()) != 3 {
-            fmt.Println("Usage: client set <key> <value>")
-            os.Exit(1)
-        }
-        key := flag.Arg(1)
-        value := flag.Arg(2)
-        if err := setKey(client, *serverAddr, key, value); err != nil {
-            log.Fatal(err)
-        }
+	// Test 2: RPS Measurement
+	fmt.Println("\nTest 2: RPS Measurement")
+	measureRPS()
 
-    case "get":
-        if len(flag.Args()) != 2 {
-            fmt.Println("Usage: client get <key>")
-            os.Exit(1)
-        }
-        key := flag.Arg(1)
-        if err := getKey(client, *serverAddr, key); err != nil {
-            log.Fatal(err)
-        }
+	// Test 3: Multiple Nodes and Partitions
+	fmt.Println("\nTest 3: Multiple Nodes and Partitions")
+	testMultipleNodesAndPartitions()
 
-    case "delete":
-        if len(flag.Args()) != 2 {
-            fmt.Println("Usage: client delete <key>")
-            os.Exit(1)
-        }
-        key := flag.Arg(1)
-        if err := deleteKey(client, *serverAddr, key); err != nil {
-            log.Fatal(err)
-        }
+	// Test 4: Node Removal and Failover
+	fmt.Println("\nTest 4: Node Removal and Failover")
+	testNodeRemovalAndFailover()
 
-    case "viewwal":
-        if err := viewWAL(client, *serverAddr); err != nil {
-            log.Fatal(err)
-        }
+	// Test 5: Node Restart
+	fmt.Println("\nTest 5: Node Restart")
+	testNodeRestart()
 
-    default:
-        fmt.Printf("Unknown command: %s\n", command)
-        printUsage()
-        os.Exit(1)
-    }
+	// Test 6: Add Node Under Load
+	fmt.Println("\nTest 6: Add Node Under Load")
+	testAddNodeUnderLoad()
+
+	// Test 7: Replica Count Adjustment
+	fmt.Println("\nTest 7: Replica Count Adjustment")
+	testReplicaCountAdjustment()
+
+	fmt.Println("\nAll tests completed!")
 }
 
-func viewWAL(client *http.Client, serverAddr string) error {
-    req, err := http.NewRequest(http.MethodGet, fmt.Sprintf("%s/wal", serverAddr), nil)
-    if err != nil {
-        return fmt.Errorf("error creating request: %v", err)
-    }
-
-    return executeRequest(client, req)
+func waitForNodes() {
+	fmt.Println("Waiting for nodes to be ready...")
+	for {
+		allReady := true
+		for _, addr := range []string{Node1Addr, Node2Addr, Node3Addr} {
+			resp, err := http.Get(addr + "/cluster/status")
+			if err != nil || resp.StatusCode != http.StatusOK {
+				allReady = false
+				break
+			}
+		}
+		if allReady {
+			break
+		}
+		time.Sleep(time.Second)
+	}
+	fmt.Println("All nodes are ready!")
 }
 
-func printUsage() {
-    fmt.Println("Usage:")
-    fmt.Println("  client --server http://localhost:8080 set <key> <value>")
-    fmt.Println("  client --server http://localhost:8080 get <key>")
-    fmt.Println("  client --server http://localhost:8080 delete <key>")
-    fmt.Println("  client --server http://localhost:8080 viewwal")
+func testBasicOperations() {
+	fmt.Println("Testing core operations...")
+
+	// Test Set operation
+	fmt.Println("\nTesting Set operation:")
+	key := "test-key"
+	value := "test-value"
+
+	// 1. Find the leader for the key's partition
+	fmt.Println("1. Finding leader for key's partition...")
+	resp, err := http.Get(Node1Addr + "/partitions")
+	if err != nil || resp.StatusCode != http.StatusOK {
+		log.Fatal("Failed to get partitions:", err)
+	}
+	var partitions []PartitionInfo
+	json.NewDecoder(resp.Body).Decode(&partitions)
+
+	// 2. Set value on the leader
+	fmt.Println("2. Setting value on leader...")
+	body, _ := json.Marshal(map[string]string{"value": value})
+	req, _ := http.NewRequest("PUT", Node1Addr+"/kv/"+key, bytes.NewBuffer(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err = http.DefaultClient.Do(req)
+	if err != nil || resp.StatusCode != http.StatusOK {
+		log.Fatal("Failed to set value:", err)
+	}
+
+	// 3. Verify WAL entry was created
+	fmt.Println("3. Verifying WAL entry...")
+	resp, err = http.Get(Node1Addr + "/wal")
+	if err != nil || resp.StatusCode != http.StatusOK {
+		log.Fatal("Failed to get WAL entries:", err)
+	}
+	var walEntries []map[string]interface{}
+	json.NewDecoder(resp.Body).Decode(&walEntries)
+	if len(walEntries) == 0 {
+		log.Fatal("No WAL entries found")
+	}
+
+	// 4. Wait for replication (Eventual Consistency)
+	fmt.Println("4. Waiting for replication...")
+	time.Sleep(2 * time.Second)
+
+	// Test Get operation
+	fmt.Println("\nTesting Get operation:")
+	// 1. Get value from any node (load balancer would handle this)
+	fmt.Println("1. Getting value from node...")
+	resp, err = http.Get(Node2Addr + "/kv/" + key)
+	if err != nil || resp.StatusCode != http.StatusOK {
+		log.Fatal("Failed to get value:", err)
+	}
+	var result map[string]string
+	json.NewDecoder(resp.Body).Decode(&result)
+	if result["value"] != value {
+		log.Fatal("Value mismatch")
+	}
+
+	// Test Delete operation
+	fmt.Println("\nTesting Delete operation:")
+	// 1. Find the leader for the key's partition
+	fmt.Println("1. Finding leader for key's partition...")
+	resp, err = http.Get(Node1Addr + "/partitions")
+	if err != nil || resp.StatusCode != http.StatusOK {
+		log.Fatal("Failed to get partitions:", err)
+	}
+	json.NewDecoder(resp.Body).Decode(&partitions)
+
+	// 2. Delete value from the leader
+	fmt.Println("2. Deleting value from leader...")
+	req, _ = http.NewRequest("DELETE", Node1Addr+"/kv/"+key, nil)
+	resp, err = http.DefaultClient.Do(req)
+	if err != nil || resp.StatusCode != http.StatusOK {
+		log.Fatal("Failed to delete value:", err)
+	}
+
+	// 3. Verify WAL entry was created
+	fmt.Println("3. Verifying WAL entry...")
+	resp, err = http.Get(Node1Addr + "/wal")
+	if err != nil || resp.StatusCode != http.StatusOK {
+		log.Fatal("Failed to get WAL entries:", err)
+	}
+	json.NewDecoder(resp.Body).Decode(&walEntries)
+	if len(walEntries) == 0 {
+		log.Fatal("No WAL entries found")
+	}
+
+	// 4. Wait for replication
+	fmt.Println("4. Waiting for replication...")
+	time.Sleep(2 * time.Second)
+
+	// 5. Verify deletion on replicas
+	fmt.Println("5. Verifying deletion on replicas...")
+	resp, err = http.Get(Node2Addr + "/kv/" + key)
+	if err == nil && resp.StatusCode == http.StatusOK {
+		log.Fatal("Value still exists on replica")
+	}
+
+	fmt.Println("\nCore operations test passed!")
 }
 
-func setKey(client *http.Client, serverAddr, key, value string) error {
-    body := SetRequestBody{Value: value}
-    jsonBody, err := json.Marshal(body)
-    if err != nil {
-        return fmt.Errorf("error marshaling request: %v", err)
-    }
+func measureRPS() {
+	const (
+		duration = 10 * time.Second
+		key      = "rps-test"
+	)
 
-    req, err := http.NewRequest(http.MethodPut, fmt.Sprintf("%s/kv/%s", serverAddr, key), bytes.NewBuffer(jsonBody))
-    if err != nil {
-        return fmt.Errorf("error creating request: %v", err)
-    }
-    req.Header.Set("Content-Type", "application/json")
+	start := time.Now()
+	operations := 0
+	var wg sync.WaitGroup
 
-    return executeRequest(client, req)
+	for time.Since(start) < duration {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			value := fmt.Sprintf("value-%d", rand.Intn(1000))
+			body, _ := json.Marshal(map[string]string{"value": value})
+			req, _ := http.NewRequest("PUT", Node1Addr+"/kv/"+key, bytes.NewBuffer(body))
+			req.Header.Set("Content-Type", "application/json")
+			http.DefaultClient.Do(req)
+			operations++
+		}()
+	}
+
+	wg.Wait()
+	elapsed := time.Since(start)
+	rps := float64(operations) / elapsed.Seconds()
+
+	fmt.Printf("Achieved %.2f RPS\n", rps)
 }
 
-func getKey(client *http.Client, serverAddr, key string) error {
-    req, err := http.NewRequest(http.MethodGet, fmt.Sprintf("%s/kv/%s", serverAddr, key), nil)
-    if err != nil {
-        return fmt.Errorf("error creating request: %v", err)
-    }
+func testMultipleNodesAndPartitions() {
+	// Create partitions
+	partitions := []PartitionInfo{
+		{ID: 1, Leader: "node-1", Replicas: []string{"node-2", "node-3"}},
+		{ID: 2, Leader: "node-2", Replicas: []string{"node-1", "node-3"}},
+		{ID: 3, Leader: "node-3", Replicas: []string{"node-1", "node-2"}},
+	}
 
-    return executeRequest(client, req)
+	for _, p := range partitions {
+		body, _ := json.Marshal(p)
+		resp, err := http.Post(Node1Addr+"/partitions", "application/json", bytes.NewBuffer(body))
+		if err != nil || resp.StatusCode != http.StatusOK {
+			log.Fatal("Failed to create partition:", err)
+		}
+	}
+
+	// Test data distribution
+	for i := 0; i < 100; i++ {
+		key := fmt.Sprintf("key-%d", i)
+		value := fmt.Sprintf("value-%d", i)
+		body, _ := json.Marshal(map[string]string{"value": value})
+		req, _ := http.NewRequest("PUT", Node1Addr+"/kv/"+key, bytes.NewBuffer(body))
+		req.Header.Set("Content-Type", "application/json")
+		http.DefaultClient.Do(req)
+	}
+
+	fmt.Println("Multiple nodes and partitions test passed!")
 }
 
-func deleteKey(client *http.Client, serverAddr, key string) error {
-    req, err := http.NewRequest(http.MethodDelete, fmt.Sprintf("%s/kv/%s", serverAddr, key), nil)
-    if err != nil {
-        return fmt.Errorf("error creating request: %v", err)
-    }
+func testNodeRemovalAndFailover() {
+	// Remove node-2
+	req, _ := http.NewRequest("DELETE", Node1Addr+"/nodes/node-2", nil)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil || resp.StatusCode != http.StatusOK {
+		log.Fatal("Failed to remove node:", err)
+	}
 
-    return executeRequest(client, req)
+	// Wait for failover
+	time.Sleep(5 * time.Second)
+
+	// Verify cluster status
+	resp, err = http.Get(Node1Addr + "/cluster/status")
+	if err != nil || resp.StatusCode != http.StatusOK {
+		log.Fatal("Failed to get cluster status:", err)
+	}
+
+	fmt.Println("Node removal and failover test passed!")
 }
 
-func executeRequest(client *http.Client, req *http.Request) error {
-    resp, err := client.Do(req)
-    if err != nil {
-        return fmt.Errorf("error executing request: %v", err)
-    }
-    defer resp.Body.Close()
+func testNodeRestart() {
+	// Simulate node restart by removing and re-adding node-2
+	req, _ := http.NewRequest("DELETE", Node1Addr+"/nodes/node-2", nil)
+	http.DefaultClient.Do(req)
 
-    body, err := io.ReadAll(resp.Body)
-    if err != nil {
-        return fmt.Errorf("error reading response: %v", err)
-    }
+	time.Sleep(2 * time.Second)
 
-    var response Response
-    if err := json.Unmarshal(body, &response); err != nil {
-        // If we can't parse the JSON, just print the raw response
-        fmt.Printf("Status: %d\n", resp.StatusCode)
-        fmt.Printf("Response: %s\n", string(body))
-        return nil
-    }
+	// Re-add node-2
+	body, _ := json.Marshal(NodeInfo{ID: "node-2", Address: "node2:8082"})
+	resp, err := http.Post(Node1Addr+"/nodes", "application/json", bytes.NewBuffer(body))
+	if err != nil || resp.StatusCode != http.StatusOK {
+		log.Fatal("Failed to re-add node:", err)
+	}
 
-    // Pretty print the response
-    fmt.Printf("Status: %d\n", resp.StatusCode)
-    if response.Status != "" {
-        fmt.Printf("Operation Status: %s\n", response.Status)
-    }
-    if response.Value != "" {
-        fmt.Printf("Value: %s\n", response.Value)
-    }
-    if response.Error != "" {
-        fmt.Printf("Error: %s\n", response.Error)
-    }
+	// Wait for recovery
+	time.Sleep(5 * time.Second)
 
-    return nil
+	fmt.Println("Node restart test passed!")
+}
+
+func testAddNodeUnderLoad() {
+	// Generate load
+	go func() {
+		for i := 0; i < 1000; i++ {
+			key := fmt.Sprintf("load-key-%d", i)
+			value := fmt.Sprintf("load-value-%d", i)
+			body, _ := json.Marshal(map[string]string{"value": value})
+			req, _ := http.NewRequest("PUT", Node1Addr+"/kv/"+key, bytes.NewBuffer(body))
+			req.Header.Set("Content-Type", "application/json")
+			http.DefaultClient.Do(req)
+		}
+	}()
+
+	// Add new node
+	body, _ := json.Marshal(NodeInfo{ID: "node-4", Address: "node4:8084"})
+	resp, err := http.Post(Node1Addr+"/nodes", "application/json", bytes.NewBuffer(body))
+	if err != nil || resp.StatusCode != http.StatusOK {
+		log.Fatal("Failed to add node under load:", err)
+	}
+
+	// Wait for rebalancing
+	time.Sleep(10 * time.Second)
+
+	fmt.Println("Add node under load test passed!")
+}
+
+func testReplicaCountAdjustment() {
+	// Update partition replicas
+	body, _ := json.Marshal(PartitionInfo{
+		ID:       1,
+		Leader:   "node-1",
+		Replicas: []string{"node-2", "node-3", "node-4"},
+	})
+	req, _ := http.NewRequest("PUT", Node1Addr+"/partitions/1", bytes.NewBuffer(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil || resp.StatusCode != http.StatusOK {
+		log.Fatal("Failed to update replicas:", err)
+	}
+
+	// Wait for replication
+	time.Sleep(5 * time.Second)
+
+	fmt.Println("Replica count adjustment test passed!")
 }

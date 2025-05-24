@@ -7,30 +7,7 @@ import (
 	"github.com/gorilla/mux"
 )
 
-// setupRoutes configures the controller's HTTP endpoints
-func (c *Controller) setupRoutes() {
-	// Node management
-	c.router.HandleFunc("/nodes", c.handleListNodes).Methods("GET")
-	c.router.HandleFunc("/nodes", c.handleAddNode).Methods("POST")
-	c.router.HandleFunc("/nodes/{id}", c.handleRemoveNode).Methods("DELETE")
-	c.router.HandleFunc("/nodes/{id}/status", c.handleGetNodeStatus).Methods("GET")
-
-	// Partition management
-	c.router.HandleFunc("/partitions", c.handleListPartitions).Methods("GET")
-	c.router.HandleFunc("/partitions", c.handleCreatePartition).Methods("POST")
-	c.router.HandleFunc("/partitions/{id}", c.handleDeletePartition).Methods("DELETE")
-	c.router.HandleFunc("/partitions/{id}/leader", c.handleChangeLeader).Methods("PUT")
-	c.router.HandleFunc("/partitions/{id}/replicas", c.handleUpdateReplicas).Methods("PUT")
-
-	// Cluster operations
-	c.router.HandleFunc("/cluster/rebalance", c.handleRebalance).Methods("POST")
-	c.router.HandleFunc("/cluster/status", c.handleClusterStatus).Methods("GET")
-
-	// Key-value store operations
-	c.router.HandleFunc("/kv/{key}", c.handleGetValue).Methods("GET")
-	c.router.HandleFunc("/kv/{key}", c.handleSetValue).Methods("PUT")
-	c.router.HandleFunc("/kv/{key}", c.handleDeleteValue).Methods("DELETE")
-}
+// setupRoutes is defined in health-helper.go
 
 // HTTP Handlers
 func (c *Controller) handleClusterStatus(w http.ResponseWriter, r *http.Request) {

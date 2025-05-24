@@ -2,8 +2,10 @@ package controller
 
 import (
 	"fmt"
+	"net/http"
 	"time"
 
+	"github.com/gorilla/mux"
 	"github.com/sajjad-MoBe/CloudKVStore/node/src/internal/shared"
 )
 
@@ -106,4 +108,48 @@ func (c *Controller) notifyNodes(partitionID int, newLeader string) error {
 	// to update their partition information. For now, we'll just log it.
 	fmt.Printf("Notifying nodes: partition %d leader changed to %s\n", partitionID, newLeader)
 	return nil
+}
+
+// handleHeartbeat updates the LastSeen timestamp for a node
+func (c *Controller) handleHeartbeat(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	nodeID := vars["id"]
+
+	c.state.mu.Lock()
+	defer c.state.mu.Unlock()
+
+	node, exists := c.state.Nodes[nodeID]
+	if !exists {
+		http.Error(w, "Node not found", http.StatusNotFound)
+		return
+	}
+
+	node.LastSeen = time.Now()
+	w.WriteHeader(http.StatusOK)
+}
+
+// In setupRoutes, add the heartbeat endpoint
+func (c *Controller) setupRoutes() {
+	// Node management
+	c.router.HandleFunc("/nodes", c.handleListNodes).Methods("GET")
+	c.router.HandleFunc("/nodes", c.handleAddNode).Methods("POST")
+	c.router.HandleFunc("/nodes/{id}", c.handleRemoveNode).Methods("DELETE")
+	c.router.HandleFunc("/nodes/{id}/status", c.handleGetNodeStatus).Methods("GET")
+	c.router.HandleFunc("/nodes/{id}/heartbeat", c.handleHeartbeat).Methods("POST")
+
+	// Partition management
+	c.router.HandleFunc("/partitions", c.handleListPartitions).Methods("GET")
+	c.router.HandleFunc("/partitions", c.handleCreatePartition).Methods("POST")
+	c.router.HandleFunc("/partitions/{id}", c.handleDeletePartition).Methods("DELETE")
+	c.router.HandleFunc("/partitions/{id}/leader", c.handleChangeLeader).Methods("PUT")
+	c.router.HandleFunc("/partitions/{id}/replicas", c.handleUpdateReplicas).Methods("PUT")
+
+	// Cluster operations
+	c.router.HandleFunc("/cluster/rebalance", c.handleRebalance).Methods("POST")
+	c.router.HandleFunc("/cluster/status", c.handleClusterStatus).Methods("GET")
+
+	// Key-value store operations
+	c.router.HandleFunc("/kv/{key}", c.handleGetValue).Methods("GET")
+	c.router.HandleFunc("/kv/{key}", c.handleSetValue).Methods("PUT")
+	c.router.HandleFunc("/kv/{key}", c.handleDeleteValue).Methods("DELETE")
 }
