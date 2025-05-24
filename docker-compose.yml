@@ -1,76 +1,95 @@
 version: '3.8'
 
 services:
-  node1:
+  controller:
     build:
-      context: ./kvstore
-      dockerfile: Dockerfile
+      context: ./kvstore/src
+      dockerfile: cmd/controller/Dockerfile
     ports:
-      - "8081:8081"
-    command: ["./kvstore", "--id", "node-1", "--port", "8081"]
-    volumes:
-      - node1_data:/app/data
+      - "8080:8080"
+    environment:
+      - CONTROLLER_ADDRESS=:8080
     networks:
       - kvstore-network
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8081/cluster/status"]
+      test: ["CMD", "wget", "--spider", "http://localhost:8080/health"]
       interval: 10s
       timeout: 5s
       retries: 3
+
+  node1:
+    build:
+      context: ./kvstore/src
+      dockerfile: cmd/node/Dockerfile
+    ports:
+      - "8081:8080"
+    environment:
+      - NODE_ID=node1
+      - NODE_ADDRESS=:8080
+      - CONTROLLER_URL=http://controller:8080
+    volumes:
+      - node1-data:/app/data
+    networks:
+      - kvstore-network
+    depends_on:
+      controller:
+        condition: service_healthy
 
   node2:
     build:
-      context: ./kvstore
-      dockerfile: Dockerfile
+      context: ./kvstore/src
+      dockerfile: cmd/node/Dockerfile
     ports:
-      - "8082:8082"
-    command: ["./kvstore", "--id", "node-2", "--port", "8082"]
+      - "8082:8080"
+    environment:
+      - NODE_ID=node2
+      - NODE_ADDRESS=:8080
+      - CONTROLLER_URL=http://controller:8080
     volumes:
-      - node2_data:/app/data
+      - node2-data:/app/data
     networks:
       - kvstore-network
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8082/cluster/status"]
-      interval: 10s
-      timeout: 5s
-      retries: 3
+    depends_on:
+      controller:
+        condition: service_healthy
 
   node3:
     build:
-      context: ./kvstore
-      dockerfile: Dockerfile
+      context: ./kvstore/src
+      dockerfile: cmd/node/Dockerfile
     ports:
-      - "8083:8083"
-    command: ["./kvstore", "--id", "node-3", "--port", "8083"]
+      - "8083:8080"
+    environment:
+      - NODE_ID=node3
+      - NODE_ADDRESS=:8080
+      - CONTROLLER_URL=http://controller:8080
     volumes:
-      - node3_data:/app/data
+      - node3-data:/app/data
     networks:
       - kvstore-network
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8083/cluster/status"]
-      interval: 10s
-      timeout: 5s
-      retries: 3
+    depends_on:
+      controller:
+        condition: service_healthy
 
   client:
     build:
       context: ./client
       dockerfile: Dockerfile
-    depends_on:
-      node1:
-        condition: service_healthy
-      node2:
-        condition: service_healthy
-      node3:
-        condition: service_healthy
+    environment:
+      - CONTROLLER_URL=http://controller:8080
+      - NODE_URLS=http://node1:8080,http://node2:8080,http://node3:8080
     networks:
       - kvstore-network
+    depends_on:
+      - node1
+      - node2
+      - node3
 
 networks:
   kvstore-network:
     driver: bridge
 
 volumes:
-  node1_data:
-  node2_data:
-  node3_data:
+  node1-data:
+  node2-data:
+  node3-data:
