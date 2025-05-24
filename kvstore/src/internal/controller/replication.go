@@ -6,7 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"strings"
+	"sync"
 	"time"
 
 	"github.com/sajjad-MoBe/CloudKVStore/kvstore/src/internal/shared"
@@ -20,13 +20,20 @@ type ReplicationStatus struct {
 	LastAckTime time.Time     `json:"last_ack_time"` // Time of last acknowledgment
 	NeedsSync   bool          `json:"needs_sync"`    // Whether full sync is needed
 	Lag         time.Duration `json:"lag"`           // Current replication lag
+	mu          sync.RWMutex
+	LastError   string    `json:"last_error"`
+	StartTime   time.Time `json:"start_time"`
 }
 
 // ReplicationManager handles data replication between nodes
 type ReplicationManager struct {
-	controller *Controller
-	logger     *shared.Logger
-	metrics    *shared.MetricsCollector
+	controller    *Controller
+	logger        *shared.Logger
+	metrics       *shared.MetricsCollector
+	mu            sync.RWMutex
+	status        map[string]map[int]*ReplicationStatus
+	httpClient    *http.Client
+	replicationMu sync.Mutex // Mutex to protect the replication process
 }
 
 // NewReplicationManager creates a new replication manager
@@ -35,31 +42,38 @@ func NewReplicationManager(controller *Controller) *ReplicationManager {
 		controller: controller,
 		logger:     shared.DefaultLogger,
 		metrics:    shared.DefaultCollector,
+		status:     make(map[string]map[int]*ReplicationStatus),
+		httpClient: &http.Client{
+			Timeout: 30 * time.Second,
+			Transport: &http.Transport{
+				MaxIdleConns:        100,
+				MaxIdleConnsPerHost: 100,
+				IdleConnTimeout:     90 * time.Second,
+			},
+		},
 	}
 }
 
 // StartReplication starts replication for a partition
 func (rm *ReplicationManager) StartReplication(partitionID int, sourceNode, targetNode string) error {
-	rm.logger.Info("Starting replication for partition %d from %s to %s", partitionID, sourceNode, targetNode)
+	rm.mu.Lock()
+	defer rm.mu.Unlock()
 
-	// Get partition info
-	partition, exists := rm.controller.state.Partitions[partitionID]
-	if !exists {
-		return fmt.Errorf("partition %d not found", partitionID)
+	// Initialize status tracking
+	if _, exists := rm.status[sourceNode]; !exists {
+		rm.status[sourceNode] = make(map[int]*ReplicationStatus)
+	}
+	if _, exists := rm.status[targetNode]; !exists {
+		rm.status[targetNode] = make(map[int]*ReplicationStatus)
 	}
 
-	// Verify source and target nodes
-	if _, exists := rm.controller.state.Nodes[sourceNode]; !exists {
-		return fmt.Errorf("source node %s not found", sourceNode)
+	rm.status[sourceNode][partitionID] = &ReplicationStatus{
+		Status:    "streaming",
+		StartTime: time.Now(),
 	}
-	if _, exists := rm.controller.state.Nodes[targetNode]; !exists {
-		return fmt.Errorf("target node %s not found", targetNode)
-	}
-
-	// If partition is not active, try to activate it
-	if partition.Status != "active" {
-		rm.logger.Info("Activating partition %d", partitionID)
-		partition.Status = "active"
+	rm.status[targetNode][partitionID] = &ReplicationStatus{
+		Status:    "streaming",
+		StartTime: time.Now(),
 	}
 
 	// Start replication in a goroutine
@@ -70,30 +84,43 @@ func (rm *ReplicationManager) StartReplication(partitionID int, sourceNode, targ
 
 // replicatePartition performs the actual replication
 func (rm *ReplicationManager) replicatePartition(partitionID int, sourceNode, targetNode string) {
+	rm.replicationMu.Lock()         // Lock the replication process
+	defer rm.replicationMu.Unlock() // Unlock the replication process
+
+	startTime := time.Now()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 
 	rm.logger.Info("Replicating partition %d from %s to %s", partitionID, sourceNode, targetNode)
-	startTime := time.Now()
 
 	// Get WAL entries from source node
 	sourceWAL, err := rm.getWALEntries(ctx, sourceNode, partitionID)
 	if err != nil {
+		rm.updateStatus(sourceNode, partitionID, "failed", 0, err.Error())
+		rm.updateStatus(targetNode, partitionID, "failed", 0, err.Error())
 		rm.logger.Error("Failed to get WAL entries from source node: %v", err)
 		return
 	}
 
-	// Apply WAL entries to target node
-	if err := rm.applyWALEntries(ctx, targetNode, partitionID, sourceWAL); err != nil {
+	// Apply WAL entries to target node with retries
+	if err := rm.applyWALEntriesWithRetry(ctx, targetNode, partitionID, sourceWAL); err != nil {
+		rm.updateStatus(sourceNode, partitionID, "failed", 0, err.Error())
+		rm.updateStatus(targetNode, partitionID, "failed", 0, err.Error())
 		rm.logger.Error("Failed to apply WAL entries to target node: %v", err)
 		return
 	}
 
-	// Verify replication
-	if err := rm.VerifyReplication(partitionID, sourceNode, targetNode); err != nil {
-		rm.logger.Error("Replication verification failed: %v", err)
+	// Verify data consistency with retries
+	if err := rm.verifyDataConsistencyWithRetry(ctx, partitionID, sourceNode, targetNode); err != nil {
+		rm.updateStatus(sourceNode, partitionID, "failed", 0, err.Error())
+		rm.updateStatus(targetNode, partitionID, "failed", 0, err.Error())
+		rm.logger.Error("Failed to verify data consistency: %v", err)
 		return
 	}
+
+	// Update status to completed
+	rm.updateStatus(sourceNode, partitionID, "completed", int64(len(sourceWAL)), "")
+	rm.updateStatus(targetNode, partitionID, "completed", int64(len(sourceWAL)), "")
 
 	// Record metrics
 	duration := time.Since(startTime).Seconds()
@@ -182,152 +209,28 @@ func (rm *ReplicationManager) applyWALEntries(ctx context.Context, nodeID string
 	return nil
 }
 
-// VerifyReplication verifies that replication was successful
-func (rm *ReplicationManager) VerifyReplication(partitionID int, sourceNode, targetNode string) error {
-	rm.logger.Info("Verifying replication for partition %d between %s and %s",
-		partitionID, sourceNode, targetNode)
+// applyWALEntriesWithRetry applies WAL entries with exponential backoff
+func (rm *ReplicationManager) applyWALEntriesWithRetry(ctx context.Context, nodeID string, partitionID int, entries []wal.LogEntry) error {
+	maxRetries := 5
+	backoff := 100 * time.Millisecond
 
-	maxRetries := 3
-	retryDelay := 2 * time.Second
-	var lastErr error
-
-	for attempt := 0; attempt < maxRetries; attempt++ {
-		if attempt > 0 {
-			rm.logger.Info("Retrying verification (attempt %d/%d) after error: %v",
-				attempt+1, maxRetries, lastErr)
-			time.Sleep(retryDelay)
+	for i := 0; i < maxRetries; i++ {
+		err := rm.applyWALEntries(ctx, nodeID, partitionID, entries)
+		if err == nil {
+			return nil
 		}
 
-		// Wait for replication to complete
-		if err := rm.waitForReplication(partitionID, sourceNode, targetNode); err != nil {
-			lastErr = fmt.Errorf("failed to wait for replication: %v", err)
-			continue
-		}
+		rm.logger.Warn("Failed to apply WAL entries (attempt %d/%d): %v", i+1, maxRetries, err)
 
-		// Get WAL entries from both nodes
-		sourceEntries, err := rm.getWALEntries(context.Background(), sourceNode, partitionID)
-		if err != nil {
-			lastErr = fmt.Errorf("failed to get source WAL entries: %v", err)
-			continue
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(backoff):
+			backoff *= 2
 		}
-
-		targetEntries, err := rm.getWALEntries(context.Background(), targetNode, partitionID)
-		if err != nil {
-			lastErr = fmt.Errorf("failed to get target WAL entries: %v", err)
-			continue
-		}
-
-		// Compare WAL entries
-		if len(sourceEntries) != len(targetEntries) {
-			lastErr = fmt.Errorf("WAL entry count mismatch: source=%d, target=%d",
-				len(sourceEntries), len(targetEntries))
-			continue
-		}
-
-		// Compare each entry with detailed error reporting
-		for i, sourceEntry := range sourceEntries {
-			targetEntry := targetEntries[i]
-			if !compareWALEntries(sourceEntry, targetEntry) {
-				lastErr = fmt.Errorf("WAL entry mismatch at index %d: source=%+v, target=%+v",
-					i, sourceEntry, targetEntry)
-				continue
-			}
-		}
-
-		// Verify data consistency
-		if err := rm.verifyDataConsistency(partitionID, sourceNode, targetNode); err != nil {
-			lastErr = fmt.Errorf("data consistency check failed: %v", err)
-			continue
-		}
-
-		// If we get here, verification was successful
-		rm.logger.Info("Replication verification successful for partition %d between %s and %s",
-			partitionID, sourceNode, targetNode)
-		return nil
 	}
 
-	return fmt.Errorf("replication verification failed after %d attempts: %v", maxRetries, lastErr)
-}
-
-// waitForReplication waits for replication to complete
-func (rm *ReplicationManager) waitForReplication(partitionID int, sourceNode, targetNode string) error {
-	timeout := 30 * time.Second
-	deadline := time.Now().Add(timeout)
-	checkInterval := 500 * time.Millisecond
-
-	for time.Now().Before(deadline) {
-		// Get replication status
-		sourceStatus, err := rm.getReplicationStatus(sourceNode, partitionID)
-		if err != nil {
-			// If we get a 404, it might mean replication hasn't started yet
-			if strings.Contains(err.Error(), "404") {
-				time.Sleep(checkInterval)
-				continue
-			}
-			return fmt.Errorf("failed to get source replication status: %v", err)
-		}
-
-		targetStatus, err := rm.getReplicationStatus(targetNode, partitionID)
-		if err != nil {
-			// If we get a 404, it might mean replication hasn't started yet
-			if strings.Contains(err.Error(), "404") {
-				time.Sleep(checkInterval)
-				continue
-			}
-			return fmt.Errorf("failed to get target replication status: %v", err)
-		}
-
-		// Check if replication is complete or in progress
-		if sourceStatus.Status == "streaming" && targetStatus.Status == "streaming" {
-			// Verify that the last sent entry matches
-			if sourceStatus.LastSent == targetStatus.LastSent {
-				return nil
-			}
-		} else if sourceStatus.Status == "syncing" || targetStatus.Status == "syncing" {
-			// If either node is still syncing, wait
-			time.Sleep(checkInterval)
-			continue
-		}
-
-		time.Sleep(checkInterval)
-	}
-
-	return fmt.Errorf("replication did not complete within %v", timeout)
-}
-
-// getReplicationStatus gets the replication status for a node
-func (rm *ReplicationManager) getReplicationStatus(nodeID string, partitionID int) (*ReplicationStatus, error) {
-	node, exists := rm.controller.state.Nodes[nodeID]
-	if !exists {
-		return nil, fmt.Errorf("node %s not found", nodeID)
-	}
-
-	url := fmt.Sprintf("http://%s/replication/status?partition=%d", node.Address, partitionID)
-	resp, err := http.Get(url)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get replication status: %v", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("unexpected status code: %d", resp.StatusCode)
-	}
-
-	var status ReplicationStatus
-	if err := json.NewDecoder(resp.Body).Decode(&status); err != nil {
-		return nil, fmt.Errorf("failed to decode replication status: %v", err)
-	}
-
-	return &status, nil
-}
-
-// compareWALEntries compares two WAL entries for equality
-func compareWALEntries(a, b wal.LogEntry) bool {
-	return a.Timestamp.Equal(b.Timestamp) &&
-		a.Operation == b.Operation &&
-		a.Key == b.Key &&
-		a.Value == b.Value &&
-		a.Partition == b.Partition
+	return fmt.Errorf("failed to apply WAL entries after %d retries", maxRetries)
 }
 
 // verifyDataConsistency verifies that the data is consistent between nodes
@@ -340,12 +243,12 @@ func (rm *ReplicationManager) verifyDataConsistency(partitionID int, sourceNode,
 
 	// Compare values for each key
 	for _, key := range sourceKeys {
-		sourceValue, err := rm.getValue(sourceNode, key)
+		sourceValue, err := rm.getValue(sourceNode, partitionID, key)
 		if err != nil {
 			return fmt.Errorf("failed to get source value for key %s: %v", key, err)
 		}
 
-		targetValue, err := rm.getValue(targetNode, key)
+		targetValue, err := rm.getValue(targetNode, partitionID, key)
 		if err != nil {
 			return fmt.Errorf("failed to get target value for key %s: %v", key, err)
 		}
@@ -357,6 +260,30 @@ func (rm *ReplicationManager) verifyDataConsistency(partitionID int, sourceNode,
 	}
 
 	return nil
+}
+
+// verifyDataConsistencyWithRetry verifies data consistency with retries
+func (rm *ReplicationManager) verifyDataConsistencyWithRetry(ctx context.Context, partitionID int, sourceNode, targetNode string) error {
+	maxRetries := 3
+	backoff := 200 * time.Millisecond
+
+	for i := 0; i < maxRetries; i++ {
+		err := rm.verifyDataConsistency(partitionID, sourceNode, targetNode)
+		if err == nil {
+			return nil
+		}
+
+		rm.logger.Warn("Failed to verify data consistency (attempt %d/%d): %v", i+1, maxRetries, err)
+
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(backoff):
+			backoff *= 2
+		}
+	}
+
+	return fmt.Errorf("failed to verify data consistency after %d retries", maxRetries)
 }
 
 // getSampleKeys gets a sample of keys from a node
@@ -385,32 +312,47 @@ func (rm *ReplicationManager) getSampleKeys(nodeID string, partitionID int) ([]s
 	return keys, nil
 }
 
-// getValue gets a value from a node
-func (rm *ReplicationManager) getValue(nodeID, key string) (string, error) {
-	node, exists := rm.controller.state.Nodes[nodeID]
-	if !exists {
-		return "", fmt.Errorf("node %s not found", nodeID)
-	}
-
-	url := fmt.Sprintf("http://%s/kv/%s", node.Address, key)
-	resp, err := http.Get(url)
+// getValue gets a value for a key from a node
+func (rm *ReplicationManager) getValue(nodeID string, partitionID int, key string) (string, error) {
+	url := fmt.Sprintf("http://%s/get?key=%s&partition=%d", nodeID, key, partitionID)
+	resp, err := rm.httpClient.Get(url)
 	if err != nil {
-		return "", fmt.Errorf("failed to get value: %v", err)
+		return "", err
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+		return "", fmt.Errorf("failed to get value: %s", resp.Status)
 	}
 
 	var result struct {
 		Value string `json:"value"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return "", fmt.Errorf("failed to decode value: %v", err)
+		return "", err
 	}
 
 	return result.Value, nil
+}
+
+// updateStatus updates the replication status for a node and partition
+func (rm *ReplicationManager) updateStatus(nodeID string, partitionID int, status string, lastSent int64, lastError string) {
+	rm.mu.Lock()
+	defer rm.mu.Unlock()
+
+	if _, exists := rm.status[nodeID]; !exists {
+		rm.status[nodeID] = make(map[int]*ReplicationStatus)
+	}
+
+	if _, exists := rm.status[nodeID][partitionID]; !exists {
+		rm.status[nodeID][partitionID] = &ReplicationStatus{}
+	}
+
+	rm.status[nodeID][partitionID].mu.Lock()
+	rm.status[nodeID][partitionID].Status = status
+	rm.status[nodeID][partitionID].LastSent = lastSent
+	rm.status[nodeID][partitionID].LastError = lastError
+	rm.status[nodeID][partitionID].mu.Unlock()
 }
 
 // HandleNodeRecovery handles the recovery of a failed node
