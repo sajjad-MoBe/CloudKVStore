@@ -150,7 +150,7 @@ func (rm *ReplicationManager) getWALEntries(ctx context.Context, nodeID string, 
 	}
 
 	// Create HTTP request to get WAL entries
-	url := fmt.Sprintf("http://%s/wal/entries?partition=%d", node.Address, partitionID)
+	url := fmt.Sprintf("http://%s/api/v1/wal/entries?partition=%d", node.Address, partitionID)
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %v", err)
@@ -170,11 +170,22 @@ func (rm *ReplicationManager) getWALEntries(ctx context.Context, nodeID string, 
 					return nil, fmt.Errorf("failed to decode WAL entries: %v", err)
 				}
 				return entries, nil
+			} else if resp.StatusCode == http.StatusNotFound {
+				// No entries found is not an error
+				return []wal.LogEntry{}, nil
 			}
 			return nil, fmt.Errorf("unexpected status code: %d", resp.StatusCode)
 		}
 
-		rm.logger.Warn("Failed to get WAL entries (attempt %d/%d): %v", i+1, maxRetries, err)
+		// Check if the error is due to node being down
+		if strings.Contains(err.Error(), "connection refused") ||
+			strings.Contains(err.Error(), "no such host") ||
+			strings.Contains(err.Error(), "connection reset") {
+			rm.logger.Warn("Node %s appears to be down (attempt %d/%d): %v", nodeID, i+1, maxRetries, err)
+		} else {
+			rm.logger.Warn("Failed to get WAL entries (attempt %d/%d): %v", i+1, maxRetries, err)
+		}
+
 		select {
 		case <-ctx.Done():
 			return nil, ctx.Err()
@@ -194,8 +205,13 @@ func (rm *ReplicationManager) applyWALEntries(ctx context.Context, nodeID string
 		return fmt.Errorf("node %s not found", nodeID)
 	}
 
+	// Skip if no entries to apply
+	if len(entries) == 0 {
+		return nil
+	}
+
 	// Create HTTP request to apply WAL entries
-	url := fmt.Sprintf("http://%s/wal/apply", node.Address)
+	url := fmt.Sprintf("http://%s/api/v1/wal/apply", node.Address)
 	data, err := json.Marshal(map[string]interface{}{
 		"partition_id": partitionID,
 		"entries":      entries,
@@ -220,11 +236,23 @@ func (rm *ReplicationManager) applyWALEntries(ctx context.Context, nodeID string
 			defer resp.Body.Close()
 			if resp.StatusCode == http.StatusOK {
 				return nil
+			} else if resp.StatusCode == http.StatusNotFound {
+				// Node not ready yet, retry
+				rm.logger.Info("Node %s not ready for WAL entries (attempt %d/%d)", nodeID, i+1, maxRetries)
+			} else {
+				return fmt.Errorf("unexpected status code: %d", resp.StatusCode)
 			}
-			return fmt.Errorf("unexpected status code: %d", resp.StatusCode)
 		}
 
-		rm.logger.Warn("Failed to apply WAL entries (attempt %d/%d): %v", i+1, maxRetries, err)
+		// Check if the error is due to node being down
+		if strings.Contains(err.Error(), "connection refused") ||
+			strings.Contains(err.Error(), "no such host") ||
+			strings.Contains(err.Error(), "connection reset") {
+			rm.logger.Warn("Node %s appears to be down (attempt %d/%d): %v", nodeID, i+1, maxRetries, err)
+		} else {
+			rm.logger.Warn("Failed to apply WAL entries (attempt %d/%d): %v", i+1, maxRetries, err)
+		}
+
 		select {
 		case <-ctx.Done():
 			return ctx.Err()

@@ -22,7 +22,7 @@ type LogEntry struct {
 
 // WAL represents the Write-Ahead Log
 type WAL struct {
-	mu          sync.Mutex
+	mu          sync.RWMutex // Changed to RWMutex for better concurrency
 	file        *os.File
 	path        string
 	maxSize     int64
@@ -51,14 +51,53 @@ func NewWAL(path string, maxSize int64) (*WAL, error) {
 		return nil, fmt.Errorf("failed to get file info: %v", err)
 	}
 
-	return &WAL{
+	wal := &WAL{
 		file:        file,
 		path:        path,
 		maxSize:     maxSize,
 		currentSize: info.Size(),
 		logger:      shared.DefaultLogger,
 		metrics:     shared.DefaultCollector,
-	}, nil
+	}
+
+	// Verify file is writable
+	if err := wal.verifyFile(); err != nil {
+		file.Close()
+		return nil, fmt.Errorf("failed to verify WAL file: %v", err)
+	}
+
+	return wal, nil
+}
+
+// verifyFile checks if the WAL file is writable
+func (w *WAL) verifyFile() error {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	// Try to write a test entry
+	testEntry := LogEntry{
+		Timestamp: time.Now(),
+		Operation: "test",
+		Key:       "test",
+		Value:     "test",
+		Partition: 0,
+	}
+
+	data, err := json.Marshal(testEntry)
+	if err != nil {
+		return fmt.Errorf("failed to marshal test entry: %v", err)
+	}
+
+	if _, err := w.file.Write(append(data, '\n')); err != nil {
+		return fmt.Errorf("failed to write test entry: %v", err)
+	}
+
+	// Remove test entry
+	if err := w.file.Truncate(w.currentSize); err != nil {
+		return fmt.Errorf("failed to truncate test entry: %v", err)
+	}
+
+	return nil
 }
 
 // Write appends a new entry to the WAL
@@ -105,8 +144,8 @@ func (w *WAL) Write(operation, key string, value interface{}, partition int) err
 
 // Read retrieves all WAL entries
 func (w *WAL) Read() ([]LogEntry, error) {
-	w.mu.Lock()
-	defer w.mu.Unlock()
+	w.mu.RLock()
+	defer w.mu.RUnlock()
 
 	// Reset file position
 	if _, err := w.file.Seek(0, 0); err != nil {
@@ -126,6 +165,32 @@ func (w *WAL) Read() ([]LogEntry, error) {
 
 	// Record metrics
 	w.metrics.RecordMetric(shared.MetricWALReadCount, shared.Counter, 1, nil)
+
+	return entries, nil
+}
+
+// ReadPartition retrieves WAL entries for a specific partition
+func (w *WAL) ReadPartition(partition int) ([]LogEntry, error) {
+	w.mu.RLock()
+	defer w.mu.RUnlock()
+
+	// Reset file position
+	if _, err := w.file.Seek(0, 0); err != nil {
+		return nil, fmt.Errorf("failed to seek to start of WAL: %v", err)
+	}
+
+	var entries []LogEntry
+	decoder := json.NewDecoder(w.file)
+
+	for decoder.More() {
+		var entry LogEntry
+		if err := decoder.Decode(&entry); err != nil {
+			return nil, fmt.Errorf("failed to decode log entry: %v", err)
+		}
+		if entry.Partition == partition {
+			entries = append(entries, entry)
+		}
+	}
 
 	return entries, nil
 }
@@ -231,7 +296,7 @@ func (w *WAL) Recover(handler func(*WALEntry) error) error {
 
 // GetMetrics returns the current WAL metrics
 func (w *WAL) GetMetrics() *shared.MetricsCollector {
-	w.mu.Lock()
-	defer w.mu.Unlock()
+	w.mu.RLock()
+	defer w.mu.RUnlock()
 	return w.metrics
 }
