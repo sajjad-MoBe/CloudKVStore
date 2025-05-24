@@ -56,12 +56,27 @@ func (c *Controller) handleGetValue(w http.ResponseWriter, r *http.Request) {
 
 	value, err := c.partitionManager.Get(key)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusNotFound)
+		response := struct {
+			Success bool   `json:"success"`
+			Error   string `json:"error"`
+		}{
+			Success: false,
+			Error:   err.Error(),
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(response)
 		return
 	}
 
+	response := struct {
+		Success bool   `json:"success"`
+		Value   string `json:"value"`
+	}{
+		Success: true,
+		Value:   value,
+	}
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{"value": value})
+	json.NewEncoder(w).Encode(response)
 }
 
 // handleSetValue handles PUT requests for key-value pairs
@@ -73,16 +88,38 @@ func (c *Controller) handleSetValue(w http.ResponseWriter, r *http.Request) {
 		Value string `json:"value"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&data); err != nil {
-		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		response := struct {
+			Success bool   `json:"success"`
+			Error   string `json:"error"`
+		}{
+			Success: false,
+			Error:   "Invalid request body",
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(response)
 		return
 	}
 
 	if err := c.partitionManager.Set(key, data.Value); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		response := struct {
+			Success bool   `json:"success"`
+			Error   string `json:"error"`
+		}{
+			Success: false,
+			Error:   err.Error(),
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(response)
 		return
 	}
 
-	w.WriteHeader(http.StatusOK)
+	response := struct {
+		Success bool `json:"success"`
+	}{
+		Success: true,
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response)
 }
 
 // handleDeleteValue handles DELETE requests for key-value pairs
@@ -91,9 +128,23 @@ func (c *Controller) handleDeleteValue(w http.ResponseWriter, r *http.Request) {
 	key := vars["key"]
 
 	if err := c.partitionManager.Delete(key); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		response := struct {
+			Success bool   `json:"success"`
+			Error   string `json:"error"`
+		}{
+			Success: false,
+			Error:   err.Error(),
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(response)
 		return
 	}
 
-	w.WriteHeader(http.StatusOK)
+	response := struct {
+		Success bool `json:"success"`
+	}{
+		Success: true,
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response)
 }
