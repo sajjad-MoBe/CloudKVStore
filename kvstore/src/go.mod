@@ -1,11 +1,11 @@
-module github.com/sajjad-MoBe/CloudKVStore/node/src
+module github.com/sajjad-MoBe/CloudKVStore/kvstore/src
 
-go 1.23.6
+go 1.24.0
 
 require (
 	github.com/gorilla/mux v1.8.1
 	github.com/spf13/cobra v1.9.1
-	github.com/stretchr/testify v1.8.4
+	github.com/stretchr/testify v1.10.0
 )
 
 require (
