@@ -1,4 +1,4 @@
-module github.com/sajjad-MoBe/CloudKVStore/node/src
+module github.com/sajjad-MoBe/CloudKVStore/kvstore/src
 
 go 1.23.6
 

@@ -1,3 +1,6 @@
-module github.com/sajjad-MoBe/CloudKVStore/node/src/cmd
+module github.com/sajjad-MoBe/CloudKVStore/kvstore/src/cmd
 
 go 1.24.0
+
+
+
